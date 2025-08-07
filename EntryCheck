@@ -1,8 +1,8 @@
 //@version=6
 indicator("Trading Entry Checklist", shorttitle = "Entry Checklist", overlay = true)
 
-// === Table with 3 columns and 7 rows ===
-var table checklistTable = table.new(position.bottom_right, 3, 7, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray)
+// === Table with 3 columns and 8 rows ===
+var table checklistTable = table.new(position.bottom_right, 3, 8, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray)
 
 // === Earnings Date Check ===
 // Note: earnings.future_time is not available in Pine Script v6
@@ -70,6 +70,27 @@ isBothGrowing = isSalesGrowing and isEpsGrowing
 
 salesEpsStr = na(salesGrowth) or na(epsGrowth) ? "N/A" : 
               "S:" + str.tostring(salesGrowth * 100, "#.#") + "% E:" + str.tostring(epsGrowth * 100, "#.#") + "%"
+
+// === Earnings Acceleration Check ===
+// Check if current quarter growth is accelerating vs previous quarter
+salesTTM_Q1 = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM", ignore_invalid_symbol=true)[63]  // ~1 quarter ago
+epsTTM_Q1 = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)[63]  // ~1 quarter ago
+
+// Calculate previous quarter's year-over-year growth rate
+prevSalesGrowth = not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth = not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
+
+// Check if growth is accelerating (current growth > previous quarter growth)
+isSalesAccelerating = not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating = not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
+isBothAccelerating = isSalesAccelerating and isEpsAccelerating
+
+// Calculate acceleration rate
+salesAcceleration = not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
+epsAcceleration = not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
+
+accelerationStr = na(salesAcceleration) or na(epsAcceleration) ? "N/A" : 
+                  "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
 
 // === Sector Strength Check ===
 // Get sector performance - using major sector ETFs as proxies
@@ -179,3 +200,8 @@ table.cell(checklistTable, 2, 5, isRSWeak ? "❌" : isRSStrong ? "✅" : "", tex
 table.cell(checklistTable, 0, 6, "Sales & EPS Growth", text_color=color.white)
 table.cell(checklistTable, 1, 6, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
 table.cell(checklistTable, 2, 6, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
+
+// === Row 7: Earnings Acceleration ===
+table.cell(checklistTable, 0, 7, "Earnings Acceleration", text_color=color.white)
+table.cell(checklistTable, 1, 7, accelerationStr, text_color=isBothAccelerating ? color.green : color.white)
+table.cell(checklistTable, 2, 7, isBothAccelerating ? "✅" : "❌", text_color=isBothAccelerating ? color.green : color.red)
