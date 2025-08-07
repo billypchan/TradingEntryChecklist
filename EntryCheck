@@ -1,0 +1,134 @@
+//@version=6
+indicator("Earnings Checklist", shorttitle = "Earnings Checklist", overlay = true)
+
+// === Table with 3 columns and 6 rows ===
+var table checklistTable = table.new(position.bottom_right, 3, 6, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray)
+
+// === Earnings Date Check ===
+// Note: earnings.future_time is not available in Pine Script v6
+// This is a placeholder - you may need to manually input earnings dates
+// or use a different data source
+earningsTime = earnings.future_time
+todayUTC = timestamp(year(timenow), month(timenow), dayofmonth(timenow), 0, 0)
+earningsUTC = na(earningsTime) ? na : timestamp(year(earningsTime), month(earningsTime), dayofmonth(earningsTime), 0, 0)
+daysUntilEarnings = na(earningsUTC) ? na : (earningsUTC - todayUTC) / 86400000
+isEarningsSoon = not na(earningsTime) and not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
+
+earningsDateStr = na(earningsTime) ? "N/A" : str.tostring(year(earningsTime)) + "-" + str.tostring(month(earningsTime)) + "-" + str.tostring(dayofmonth(earningsTime)) + " " + str.tostring(hour(earningsTime), "#00") + ":" + str.tostring(minute(earningsTime), "#00")
+
+// === Weak Month Check ===
+currentMonth = month(timenow)
+isWeakMonth = currentMonth == 5 or currentMonth == 8 or currentMonth == 9
+monthStr = str.tostring(currentMonth) + " (" + (currentMonth == 5 ? "May" : currentMonth == 8 ? "Aug" : currentMonth == 9 ? "Sep" : "Other") + ")"
+
+// === RS Rating vs SPX ===
+spx = request.security("SP:SPX", "D", close)
+closeDa = request.security(syminfo.tickerid, "D", close)
+n63  = math.min(bar_index, 63)
+n126 = math.min(bar_index, 126)
+n189 = math.min(bar_index, 189)
+n252 = math.min(bar_index, 252)
+
+perfStock = 0.4 * (closeDa / closeDa[n63]) + 0.2 * (closeDa / closeDa[n126]) + 0.2 * (closeDa / closeDa[n189]) + 0.2 * (closeDa / closeDa[n252])
+perfSPX   = 0.4 * (spx / spx[n63]) + 0.2 * (spx / spx[n126]) + 0.2 * (spx / spx[n189]) + 0.2 * (spx / spx[n252])
+rsScore   = perfStock / perfSPX * 100
+
+rsRating = rsScore >= 120 ? 99 :
+           rsScore >= 110 ? 90 :
+           rsScore >= 100 ? 80 :
+           rsScore >= 95  ? 70 :
+           rsScore >= 90  ? 60 :
+           rsScore >= 85  ? 50 :
+           rsScore >= 75  ? 40 :
+           rsScore >= 65  ? 30 :
+           rsScore >= 55  ? 20 :
+           rsScore >= 45  ? 10 : 1
+
+isRSWeak = rsRating < 65
+isRSStrong = rsRating >= 80
+
+// === Greed/Fear Index (example: INDEX:FEARGREED or placeholder) ===
+vix = request.security("CBOE:VIX", "D", close)
+vixStr = na(vix) ? "N/A" : str.tostring(vix, "#.##")
+isGreed = vix <= 15
+isFear  = vix >= 25
+
+// === Sales and EPS Growth Check ===
+// Using request.financial() to get fundamental data
+salesTTM = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
+salesTTM_1Y = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM", ignore_invalid_symbol=true)[252]
+epsTTM = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
+epsTTM_1Y = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)[252]
+
+// Calculate year-over-year growth
+salesGrowth = not na(salesTTM) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM / salesTTM_1Y - 1) : na
+epsGrowth = not na(epsTTM) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM / epsTTM_1Y - 1) : na
+
+isSalesGrowing = not na(salesGrowth) and salesGrowth > 0
+isEpsGrowing = not na(epsGrowth) and epsGrowth > 0
+isBothGrowing = isSalesGrowing and isEpsGrowing
+
+salesEpsStr = na(salesGrowth) or na(epsGrowth) ? "N/A" : 
+              "S:" + str.tostring(salesGrowth * 100, "#.#") + "% E:" + str.tostring(epsGrowth * 100, "#.#") + "%"
+
+// === Sector Strength Check ===
+// Get sector performance - using major sector ETFs as proxies
+// You can modify these based on your stock's actual sector
+sectorETF = switch
+    syminfo.sector == "Technology" => "XLK"
+    syminfo.sector == "Healthcare" => "XLV"
+    syminfo.sector == "Financial" => "XLF"
+    syminfo.sector == "Energy" => "XLE"
+    syminfo.sector == "Consumer Discretionary" => "XLY"
+    syminfo.sector == "Consumer Staples" => "XLP"
+    syminfo.sector == "Industrials" => "XLI"
+    syminfo.sector == "Materials" => "XLB"
+    syminfo.sector == "Real Estate" => "XLRE"
+    syminfo.sector == "Utilities" => "XLU"
+    syminfo.sector == "Communication Services" => "XLC"
+    => "SPY"  // Default to SPY if sector unknown
+
+// Get sector ETF performance vs SPY
+sectorClose = request.security(sectorETF, "D", close)
+spyClose = request.security("SPY", "D", close)
+
+// Calculate sector relative strength vs market (20-day performance)
+n20 = math.min(bar_index, 20)
+sectorPerf20 = sectorClose / sectorClose[n20] - 1
+spyPerf20 = spyClose / spyClose[n20] - 1
+sectorRelativePerf = sectorPerf20 - spyPerf20
+
+isSectorStrong = sectorRelativePerf > 0.02  // Sector outperforming by more than 2%
+isSectorWeak = sectorRelativePerf < -0.02   // Sector underperforming by more than 2%
+
+sectorStr = na(sectorRelativePerf) ? "N/A" : (na(syminfo.sector) ? "Unknown" : syminfo.sector) + ": " + str.tostring(sectorRelativePerf * 100, "#.#") + "% vs SPY"
+
+// === Row 0: Earnings Period ===
+table.cell(checklistTable, 0, 0, "Is earning period?", text_color=color.white)
+table.cell(checklistTable, 1, 0, earningsDateStr, text_color=isEarningsSoon ? color.red : color.white)
+table.cell(checklistTable, 2, 0, isEarningsSoon ? "❌" : "", text_color=color.red)
+
+// === Row 1: Weak Month ===
+table.cell(checklistTable, 0, 1, "Is weak month?", text_color=color.white)
+table.cell(checklistTable, 1, 1, monthStr, text_color=isWeakMonth ? color.red : color.white)
+table.cell(checklistTable, 2, 1, isWeakMonth ? "❌" : "", text_color=color.red)
+
+// === Row 2: RS Rating ===
+table.cell(checklistTable, 0, 2, "RS Rating", text_color=color.white)
+table.cell(checklistTable, 1, 2, str.tostring(rsRating, "#.##"), text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 2, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+
+// === Row 3: Greed/Fear (using VIX) ===
+table.cell(checklistTable, 0, 3, "Greed/Fear (VIX)", text_color=color.white)
+table.cell(checklistTable, 1, 3, vixStr, text_color=isFear ? color.red : isGreed ? color.green : color.white)
+table.cell(checklistTable, 2, 3, isFear ? "❌" : isGreed ? "✅" : "", text_color=isFear ? color.red : isGreed ? color.green : color.white)
+
+// === Row 4: Sales & EPS Growth ===
+table.cell(checklistTable, 0, 4, "Sales & EPS Growth", text_color=color.white)
+table.cell(checklistTable, 1, 4, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
+table.cell(checklistTable, 2, 4, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
+
+// === Row 5: Sector Strength ===
+table.cell(checklistTable, 0, 5, "Sector Strength", text_color=color.white)
+table.cell(checklistTable, 1, 5, sectorStr, text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 5, isSectorWeak ? "❌" : isSectorStrong ? "✅" : "", text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
