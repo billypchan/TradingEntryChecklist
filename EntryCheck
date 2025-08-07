@@ -73,19 +73,28 @@ salesEpsStr = na(salesGrowth) or na(epsGrowth) ? "N/A" :
 
 // === Sector Strength Check ===
 // Get sector performance - using major sector ETFs as proxies
-// You can modify these based on your stock's actual sector
+// Updated with comprehensive TradingView sector names
 sectorETF = switch
-    syminfo.sector == "Technology" => "XLK"
-    syminfo.sector == "Healthcare" => "XLV"
-    syminfo.sector == "Financial" => "XLF"
-    syminfo.sector == "Energy" => "XLE"
-    syminfo.sector == "Consumer Discretionary" => "XLY"
-    syminfo.sector == "Consumer Staples" => "XLP"
-    syminfo.sector == "Industrials" => "XLI"
-    syminfo.sector == "Materials" => "XLB"
-    syminfo.sector == "Real Estate" => "XLRE"
+    syminfo.sector == "Technology Services" => "XLK"
+    syminfo.sector == "Electronic Technology" => "XLK"
+    syminfo.sector == "Finance" => "XLF"
+    syminfo.sector == "Health Technology" => "XLV"
+    syminfo.sector == "Health Services" => "XLV"
+    syminfo.sector == "Retail Trade" => "XLY"
+    syminfo.sector == "Consumer Non-Durables" => "XLP"
+    syminfo.sector == "Consumer Durables" => "XLY"
+    syminfo.sector == "Consumer Services" => "XLY"
+    syminfo.sector == "Producer Manufacturing" => "XLI"
+    syminfo.sector == "Energy Minerals" => "XLE"
     syminfo.sector == "Utilities" => "XLU"
-    syminfo.sector == "Communication Services" => "XLC"
+    syminfo.sector == "Communications" => "XLC"
+    syminfo.sector == "Process Industries" => "XLB"
+    syminfo.sector == "Transportation" => "XLI"
+    syminfo.sector == "Non-Energy Minerals" => "XLB"
+    syminfo.sector == "Industrial Services" => "XLI"
+    syminfo.sector == "Commercial Services" => "XLI"
+    syminfo.sector == "Distribution Services" => "XLI"
+    syminfo.sector == "Miscellaneous" => "SPY"
     => "SPY"  // Default to SPY if sector unknown
 
 // Get sector ETF performance vs SPY
@@ -113,22 +122,22 @@ table.cell(checklistTable, 0, 1, "Is weak month?", text_color=color.white)
 table.cell(checklistTable, 1, 1, monthStr, text_color=isWeakMonth ? color.red : color.white)
 table.cell(checklistTable, 2, 1, isWeakMonth ? "❌" : "", text_color=color.red)
 
-// === Row 2: RS Rating ===
-table.cell(checklistTable, 0, 2, "RS Rating", text_color=color.white)
-table.cell(checklistTable, 1, 2, str.tostring(rsRating, "#.##"), text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
-table.cell(checklistTable, 2, 2, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
-
 // === Row 3: Greed/Fear (using VIX) ===
 table.cell(checklistTable, 0, 3, "Greed/Fear (VIX)", text_color=color.white)
 table.cell(checklistTable, 1, 3, vixStr, text_color=isFear ? color.red : isGreed ? color.green : color.white)
 table.cell(checklistTable, 2, 3, isFear ? "❌" : isGreed ? "✅" : "", text_color=isFear ? color.red : isGreed ? color.green : color.white)
 
-// === Row 4: Sales & EPS Growth ===
-table.cell(checklistTable, 0, 4, "Sales & EPS Growth", text_color=color.white)
-table.cell(checklistTable, 1, 4, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
-table.cell(checklistTable, 2, 4, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
-
 // === Row 5: Sector Strength ===
 table.cell(checklistTable, 0, 5, "Sector Strength", text_color=color.white)
 table.cell(checklistTable, 1, 5, sectorStr, text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
 table.cell(checklistTable, 2, 5, isSectorWeak ? "❌" : isSectorStrong ? "✅" : "", text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
+
+// === Row 2: RS Rating ===
+table.cell(checklistTable, 0, 2, "RS Rating", text_color=color.white)
+table.cell(checklistTable, 1, 2, str.tostring(rsRating, "#.##"), text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 2, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+
+// === Row 4: Sales & EPS Growth ===
+table.cell(checklistTable, 0, 4, "Sales & EPS Growth", text_color=color.white)
+table.cell(checklistTable, 1, 4, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
+table.cell(checklistTable, 2, 4, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
