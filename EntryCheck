@@ -108,6 +108,9 @@ industryETF = switch
     str.contains(str.lower(syminfo.industry), "telecommunications equipment") or str.contains(str.lower(syminfo.industry), "telecom equipment") => "XTL"
     str.contains(str.lower(syminfo.industry), "aerospace") or str.contains(str.lower(syminfo.industry), "defense") => "ITA"
     str.contains(str.lower(syminfo.industry), "hardware") or str.contains(str.lower(syminfo.industry), "peripherals") or str.contains(str.lower(syminfo.industry), "electronic components") or str.contains(str.lower(syminfo.industry), "electronic equipment") => "XLK"
+    str.contains(str.lower(syminfo.industry), "household") or str.contains(str.lower(syminfo.industry), "personal care") or str.contains(str.lower(syminfo.industry), "beverages") or str.contains(str.lower(syminfo.industry), "tobacco") => "XLP"
+    str.contains(str.lower(syminfo.industry), "apparel") or str.contains(str.lower(syminfo.industry), "footwear") => "XRT"
+    str.contains(str.lower(syminfo.industry), "food") or str.contains(str.lower(syminfo.industry), "meat") or str.contains(str.lower(syminfo.industry), "dairy") => "PBJ"
     => sectorETF  // Fall back to sector ETF if no specific industry ETF found
 
 // Use industry-specific ETF if available, otherwise use sector ETF
@@ -161,9 +164,11 @@ table.cell(checklistTable, 1, 3, sectorStr, text_color=isSectorWeak ? color.red 
 table.cell(checklistTable, 2, 3, isSectorWeak ? "❌" : isSectorStrong ? "✅" : "", text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
 
 // === Row 4: Industry Strength ===
-table.cell(checklistTable, 0, 4, "Industry Strength", text_color=color.white)
-table.cell(checklistTable, 1, 4, industryStr, text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
-table.cell(checklistTable, 2, 4, isIndustryWeak ? "❌" : isIndustryStrong ? "✅" : "", text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
+// Only show industry strength if it uses a different ETF than the sector
+if (finalETF != sectorETF)
+    table.cell(checklistTable, 0, 4, "Industry Strength", text_color=color.white)
+    table.cell(checklistTable, 1, 4, industryStr, text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
+    table.cell(checklistTable, 2, 4, isIndustryWeak ? "❌" : isIndustryStrong ? "✅" : "", text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
 
 // === Row 5: RS Rating ===
 table.cell(checklistTable, 0, 5, "RS Rating", text_color=color.white)
