@@ -1,8 +1,8 @@
 //@version=6
-indicator("Earnings Checklist", shorttitle = "Earnings Checklist", overlay = true)
+indicator("Trading Entry Checklist", shorttitle = "Entry Checklist", overlay = true)
 
-// === Table with 3 columns and 6 rows ===
-var table checklistTable = table.new(position.bottom_right, 3, 6, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray)
+// === Table with 3 columns and 7 rows ===
+var table checklistTable = table.new(position.bottom_right, 3, 7, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray)
 
 // === Earnings Date Check ===
 // Note: earnings.future_time is not available in Pine Script v6
@@ -73,7 +73,7 @@ salesEpsStr = na(salesGrowth) or na(epsGrowth) ? "N/A" :
 
 // === Sector Strength Check ===
 // Get sector performance - using major sector ETFs as proxies
-// Updated with comprehensive TradingView sector names
+// Updated with comprehensive TradingView sector names and specific industry ETFs
 sectorETF = switch
     syminfo.sector == "Technology Services" => "XLK"
     syminfo.sector == "Electronic Technology" => "XLK"
@@ -90,14 +90,30 @@ sectorETF = switch
     syminfo.sector == "Communications" => "XLC"
     syminfo.sector == "Process Industries" => "XLB"
     syminfo.sector == "Transportation" => "XLI"
-    syminfo.sector == "Non-Energy Minerals" => "XLB"
+    syminfo.sector == "Non-Energy Minerals" => "PICK"  // More specific for metals/minerals
     syminfo.sector == "Industrial Services" => "XLI"
     syminfo.sector == "Commercial Services" => "XLI"
     syminfo.sector == "Distribution Services" => "XLI"
     syminfo.sector == "Miscellaneous" => "SPY"
     => "SPY"  // Default to SPY if sector unknown
 
-// Get sector ETF performance vs SPY
+// Additional industry-specific ETF mapping for more granular analysis
+industryETF = switch
+    str.contains(str.lower(syminfo.industry), "precious metals") or str.contains(str.lower(syminfo.industry), "gold") or str.contains(str.lower(syminfo.industry), "silver") => "GOAU"
+    str.contains(str.lower(syminfo.industry), "steel") => "SLX"
+    str.contains(str.lower(syminfo.industry), "construction materials") or str.contains(str.lower(syminfo.industry), "building materials") => "XHB"
+    str.contains(str.lower(syminfo.industry), "forest products") or str.contains(str.lower(syminfo.industry), "lumber") or str.contains(str.lower(syminfo.industry), "wood") => "WOOD"
+    str.contains(str.lower(syminfo.industry), "aluminum") or str.contains(str.lower(syminfo.industry), "other metals") => "PICK"
+    str.contains(str.lower(syminfo.industry), "semiconductor") => "SMH"
+    str.contains(str.lower(syminfo.industry), "telecommunications equipment") or str.contains(str.lower(syminfo.industry), "telecom equipment") => "XTL"
+    str.contains(str.lower(syminfo.industry), "aerospace") or str.contains(str.lower(syminfo.industry), "defense") => "ITA"
+    str.contains(str.lower(syminfo.industry), "hardware") or str.contains(str.lower(syminfo.industry), "peripherals") or str.contains(str.lower(syminfo.industry), "electronic components") or str.contains(str.lower(syminfo.industry), "electronic equipment") => "XLK"
+    => sectorETF  // Fall back to sector ETF if no specific industry ETF found
+
+// Use industry-specific ETF if available, otherwise use sector ETF
+finalETF = industryETF
+
+// Get sector ETF performance vs SPY (always use sector ETF for sector comparison)
 sectorClose = request.security(sectorETF, "D", close)
 spyClose = request.security("SPY", "D", close)
 
@@ -110,7 +126,19 @@ sectorRelativePerf = sectorPerf20 - spyPerf20
 isSectorStrong = sectorRelativePerf > 0.02  // Sector outperforming by more than 2%
 isSectorWeak = sectorRelativePerf < -0.02   // Sector underperforming by more than 2%
 
-sectorStr = na(sectorRelativePerf) ? "N/A" : (na(syminfo.sector) ? "Unknown" : syminfo.sector) + ": " + str.tostring(sectorRelativePerf * 100, "#.#") + "% vs SPY"
+sectorStr = na(sectorRelativePerf) ? "N/A" : (na(syminfo.sector) ? "Unknown" : syminfo.sector) + " (" + sectorETF + "): " + str.tostring(sectorRelativePerf * 100, "#.#") + "% vs SPY"
+
+// === Industry Strength Check ===
+// Get industry-specific ETF performance vs SPY (use finalETF for more specific industry analysis)
+industryClose = request.security(finalETF, "D", close)
+industryPerf20 = industryClose / industryClose[n20] - 1
+industryRelativePerf = industryPerf20 - spyPerf20
+
+isIndustryStrong = industryRelativePerf > 0.02  // Industry outperforming by more than 2%
+isIndustryWeak = industryRelativePerf < -0.02   // Industry underperforming by more than 2%
+
+industryStr = na(industryRelativePerf) ? "N/A" : 
+              (na(syminfo.industry) ? "Unknown" : syminfo.industry) + " (" + finalETF + "): " + str.tostring(industryRelativePerf * 100, "#.#") + "% vs SPY"
 
 // === Row 0: Earnings Period ===
 table.cell(checklistTable, 0, 0, "Is earning period?", text_color=color.white)
@@ -122,22 +150,27 @@ table.cell(checklistTable, 0, 1, "Is weak month?", text_color=color.white)
 table.cell(checklistTable, 1, 1, monthStr, text_color=isWeakMonth ? color.red : color.white)
 table.cell(checklistTable, 2, 1, isWeakMonth ? "❌" : "", text_color=color.red)
 
-// === Row 3: Greed/Fear (using VIX) ===
-table.cell(checklistTable, 0, 3, "Greed/Fear (VIX)", text_color=color.white)
-table.cell(checklistTable, 1, 3, vixStr, text_color=isFear ? color.red : isGreed ? color.green : color.white)
-table.cell(checklistTable, 2, 3, isFear ? "❌" : isGreed ? "✅" : "", text_color=isFear ? color.red : isGreed ? color.green : color.white)
+// === Row 2: Greed/Fear (using VIX) ===
+table.cell(checklistTable, 0, 2, "Greed/Fear (VIX)", text_color=color.white)
+table.cell(checklistTable, 1, 2, vixStr, text_color=isFear ? color.red : isGreed ? color.green : color.white)
+table.cell(checklistTable, 2, 2, isFear ? "❌" : isGreed ? "✅" : "", text_color=isFear ? color.red : isGreed ? color.green : color.white)
 
-// === Row 5: Sector Strength ===
-table.cell(checklistTable, 0, 5, "Sector Strength", text_color=color.white)
-table.cell(checklistTable, 1, 5, sectorStr, text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
-table.cell(checklistTable, 2, 5, isSectorWeak ? "❌" : isSectorStrong ? "✅" : "", text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
+// === Row 3: Sector Strength ===
+table.cell(checklistTable, 0, 3, "Sector Strength", text_color=color.white)
+table.cell(checklistTable, 1, 3, sectorStr, text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 3, isSectorWeak ? "❌" : isSectorStrong ? "✅" : "", text_color=isSectorWeak ? color.red : isSectorStrong ? color.green : color.white)
 
-// === Row 2: RS Rating ===
-table.cell(checklistTable, 0, 2, "RS Rating", text_color=color.white)
-table.cell(checklistTable, 1, 2, str.tostring(rsRating, "#.##"), text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
-table.cell(checklistTable, 2, 2, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+// === Row 4: Industry Strength ===
+table.cell(checklistTable, 0, 4, "Industry Strength", text_color=color.white)
+table.cell(checklistTable, 1, 4, industryStr, text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 4, isIndustryWeak ? "❌" : isIndustryStrong ? "✅" : "", text_color=isIndustryWeak ? color.red : isIndustryStrong ? color.green : color.white)
 
-// === Row 4: Sales & EPS Growth ===
-table.cell(checklistTable, 0, 4, "Sales & EPS Growth", text_color=color.white)
-table.cell(checklistTable, 1, 4, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
-table.cell(checklistTable, 2, 4, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
+// === Row 5: RS Rating ===
+table.cell(checklistTable, 0, 5, "RS Rating", text_color=color.white)
+table.cell(checklistTable, 1, 5, str.tostring(rsRating, "#.##"), text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+table.cell(checklistTable, 2, 5, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
+
+// === Row 6: Sales & EPS Growth ===
+table.cell(checklistTable, 0, 6, "Sales & EPS Growth", text_color=color.white)
+table.cell(checklistTable, 1, 6, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
+table.cell(checklistTable, 2, 6, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
