@@ -150,7 +150,7 @@ sectorRelativePerf = sectorPerf20 - spyPerf20
 isSectorStrong = sectorRelativePerf > 0.02  // Sector outperforming by more than 2%
 isSectorWeak = sectorRelativePerf < -0.02   // Sector underperforming by more than 2%
 
-sectorStr = na(sectorRelativePerf) ? "N/A" : (na(syminfo.sector) ? "Unknown" : syminfo.sector) + " (" + sectorETF + "): " + str.tostring(sectorRelativePerf * 100, "#.#") + "% vs SPY"
+sectorStr = na(sectorRelativePerf) ? "N/A" : (na(syminfo.sector) ? "Unknown" : syminfo.sector) + " (" + sectorETF + "):\n" + str.tostring(sectorRelativePerf * 100, "#.#") + "% vs SPY"
 
 // === Industry Strength Check ===
 // Get industry-specific ETF performance vs SPY (use finalETF for more specific industry analysis)
@@ -197,11 +197,25 @@ table.cell(checklistTable, 1, 5, str.tostring(rsRating, "#.##"), text_color=isRS
 table.cell(checklistTable, 2, 5, isRSWeak ? "❌" : isRSStrong ? "✅" : "", text_color=isRSWeak ? color.red : isRSStrong ? color.green : color.white)
 
 // === Row 6: Sales & EPS Growth ===
+// Determine growth status: both growing = ✅, both declining = ❌, mixed = neutral
+isBothDeclining = not na(salesGrowth) and not na(epsGrowth) and salesGrowth < 0 and epsGrowth < 0
+isMixedGrowth = not na(salesGrowth) and not na(epsGrowth) and ((salesGrowth > 0 and epsGrowth < 0) or (salesGrowth < 0 and epsGrowth > 0))
+
+salesEpsIndicator = isBothGrowing ? "✅" : isBothDeclining ? "❌" : ""
+salesEpsColor = isBothGrowing ? color.green : isBothDeclining ? color.red : color.white
+
 table.cell(checklistTable, 0, 6, "Sales & EPS Growth", text_color=color.white)
-table.cell(checklistTable, 1, 6, salesEpsStr, text_color=isBothGrowing ? color.green : color.white)
-table.cell(checklistTable, 2, 6, isBothGrowing ? "✅" : "❌", text_color=isBothGrowing ? color.green : color.red)
+table.cell(checklistTable, 1, 6, salesEpsStr, text_color=salesEpsColor)
+table.cell(checklistTable, 2, 6, salesEpsIndicator, text_color=salesEpsColor)
 
 // === Row 7: Earnings Acceleration ===
+// Determine acceleration status: both accelerating = ✅, both decelerating = ❌, mixed = neutral
+isBothDecelerating = not na(salesGrowth) and not na(prevSalesGrowth) and not na(epsGrowth) and not na(prevEpsGrowth) and salesGrowth < prevSalesGrowth and epsGrowth < prevEpsGrowth
+isMixedAcceleration = not na(salesGrowth) and not na(prevSalesGrowth) and not na(epsGrowth) and not na(prevEpsGrowth) and ((salesGrowth > prevSalesGrowth and epsGrowth < prevEpsGrowth) or (salesGrowth < prevSalesGrowth and epsGrowth > prevEpsGrowth))
+
+accelerationIndicator = isBothAccelerating ? "✅" : isBothDecelerating ? "❌" : ""
+accelerationColor = isBothAccelerating ? color.green : isBothDecelerating ? color.red : color.white
+
 table.cell(checklistTable, 0, 7, "Earnings Acceleration", text_color=color.white)
-table.cell(checklistTable, 1, 7, accelerationStr, text_color=isBothAccelerating ? color.green : color.white)
-table.cell(checklistTable, 2, 7, isBothAccelerating ? "✅" : "❌", text_color=isBothAccelerating ? color.green : color.red)
+table.cell(checklistTable, 1, 7, accelerationStr, text_color=accelerationColor)
+table.cell(checklistTable, 2, 7, accelerationIndicator, text_color=accelerationColor)
