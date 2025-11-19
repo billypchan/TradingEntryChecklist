@@ -1,204 +1,190 @@
 //@version=5
-indicator("Trading Entry Checklist", shorttitle = "Entry Checklist", overlay = true)
+indicator("Advanced Entry Checklist [GenAI]", shorttitle = "Entry Checklist Pro", overlay = true)
 
 // ==========================================
 // 1. CONFIGURATION & SETUP
 // ==========================================
 
-// Define table position and appearance
-var table checklistTable = table.new(position.bottom_right, 3, 9, bgcolor=color.rgb(54, 58, 69, 70), frame_width=1, frame_color=color.gray, border_width=1)
+// Table Configuration
+var table checklistTable = table.new(position.bottom_right, 3, 12, bgcolor=color.rgb(19, 23, 34, 10), frame_width=1, frame_color=color.rgb(42, 46, 57), border_width=1)
+
+// Colors
+c_bull = #00E396
+c_bear = #FF4560
+c_neut = #B2B5BE
+c_text = color.white
 
 // ==========================================
 // 2. DATA FETCHING & CALCULATIONS
 // ==========================================
 
-// --- Earnings Date Check ---
-// Get the next earnings time directly from metadata
+// --- A. Market Breadth (S5TH) ---
+// Percentage of SP500 stocks above 50-day MA
+s5th = request.security("INDEX:S5TH", "D", close)
+isBreadthOversold = s5th < 20
+isBreadthOverbought = s5th > 80
+s5thStr = str.tostring(s5th, "#.##") + "%"
+
+// --- B. Earnings Date Check ---
 earningsTime = earnings.future_time
-// Calculate days until earnings (86400000 ms per day)
 daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 : na
 isEarningsSoon = not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
+earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd}", earningsTime)
 
-// Format Earnings String
-earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd HH:mm}", earningsTime)
-
-// --- Weak Month Check ---
+// --- C. Seasonality ---
 currentMonth = month(timenow)
-// Historically weak months: May, Aug, Sep
-isWeakMonth = currentMonth == 5 or currentMonth == 8 or currentMonth == 9
+isWeakMonth = currentMonth == 5 or currentMonth == 8 or currentMonth == 9 // May, Aug, Sep
 monthName = switch currentMonth
+    1 => "Jan"
+    2 => "Feb"
+    3 => "Mar"
+    4 => "Apr"
     5 => "May"
+    6 => "Jun"
+    7 => "Jul"
     8 => "Aug"
     9 => "Sep"
-    => "Other"
-monthStr = str.format("{0} ({1})", currentMonth, monthName)
+    10 => "Oct"
+    11 => "Nov"
+    12 => "Dec"
+    => "N/A"
+monthStr = str.format("{0} ({1})", monthName, isWeakMonth ? "Weak" : "Neut")
 
-// --- RS Rating vs SPX (IBD Style) ---
-// We use a weighted average of performance over 3, 6, 9, 12 months
+// --- D. RS Rating vs SPX (IBD Style) ---
 [spxClose, stockClose] = request.security(syminfo.tickerid, "D", [request.security("SP:SPX", "D", close), close])
 
-// Helper function for ROC calculation to keep code clean
 calc_roc(src, len) =>
     safe_len = math.min(bar_index, len)
     src / src[safe_len]
 
 perfStock = 0.4 * calc_roc(stockClose, 63) + 0.2 * calc_roc(stockClose, 126) + 0.2 * calc_roc(stockClose, 189) + 0.2 * calc_roc(stockClose, 252)
 perfSPX   = 0.4 * calc_roc(spxClose, 63)   + 0.2 * calc_roc(spxClose, 126)   + 0.2 * calc_roc(spxClose, 189)   + 0.2 * calc_roc(spxClose, 252)
-rsScore   = perfStock / perfSPX * 100
+rsScore   = perfSPX != 0 ? perfStock / perfSPX * 100 : 0
 
-// Map raw score to a 1-99 rating (Simplified approximation)
 rsRating = rsScore >= 120 ? 99 : rsScore >= 110 ? 90 : rsScore >= 100 ? 80 : rsScore >= 95 ? 70 : rsScore >= 90 ? 60 : rsScore >= 85 ? 50 : rsScore >= 75 ? 40 : rsScore >= 65 ? 30 : rsScore >= 55 ? 20 : rsScore >= 45 ? 10 : 1
-
 isRSWeak = rsRating < 65
 isRSStrong = rsRating >= 80
 
-// --- Greed/Fear Index (VIX) ---
-vix = request.security("CBOE:VIX", "D", close)
-vixStr = na(vix) ? "N/A" : str.tostring(vix, "#.##")
-isGreed = vix <= 15
-isFear  = vix >= 25
-
-// --- Sales and EPS Growth ---
-// Fetching TTM (Trailing Twelve Months) data
+// --- E. Growth Metrics ---
 salesTTM = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
 epsTTM   = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
-
-// Lookback 252 bars (approx 1 year) for YoY comparison
 salesTTM_1Y = salesTTM[252]
 epsTTM_1Y   = epsTTM[252]
-
-// Lookback 63 bars (approx 1 quarter) for Acceleration check
-salesTTM_Q1 = salesTTM[63]
-epsTTM_Q1   = epsTTM[63]
-
-// Growth Calculations
-calc_growth(current, previous) =>
-    not na(current) and not na(previous) and previous != 0 ? (current / previous - 1) : na
-
+calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
 salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
 epsGrowth   = calc_growth(epsTTM, epsTTM_1Y)
+salesEpsStr = (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
+isGrowthStrong = nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
 
-// Acceleration Calculations (Current Growth vs Previous Quarter's Growth)
-prevSalesGrowth = calc_growth(salesTTM_Q1, salesTTM_1Y)
-prevEpsGrowth   = calc_growth(epsTTM_Q1, epsTTM_1Y)
+// --- F. Earnings Acceleration Check ---
+// Check if current quarter growth is accelerating vs previous quarter
+salesTTM_Q1 = salesTTM[63] // Reuse fetched data
+epsTTM_Q1   = epsTTM[63]
 
-// Logic Flags
-isSalesGrowing = nz(salesGrowth) > 0
-isEpsGrowing   = nz(epsGrowth) > 0
-isBothGrowing  = isSalesGrowing and isEpsGrowing
-isBothDeclining = nz(salesGrowth) < 0 and nz(epsGrowth) < 0
+// Calculate previous quarter's year-over-year growth rate
+prevSalesGrowth = not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth   = not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
 
-isSalesAccelerating = nz(salesGrowth) > nz(prevSalesGrowth)
-isEpsAccelerating   = nz(epsGrowth) > nz(prevEpsGrowth)
+// Check if growth is accelerating (current growth > previous quarter growth)
+isSalesAccelerating = not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating   = not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
 isBothAccelerating  = isSalesAccelerating and isEpsAccelerating
-isBothDecelerating  = nz(salesGrowth) < nz(prevSalesGrowth) and nz(epsGrowth) < nz(prevEpsGrowth)
 
-// Formatting Strings
-salesEpsStr = (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#.#}% E:{1,number,#.#}%", salesGrowth * 100, epsGrowth * 100)
+// Calculate acceleration rate
+salesAcceleration = not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
+epsAcceleration   = not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
 
-salesAccVal = nz(salesGrowth - prevSalesGrowth) * 100
-epsAccVal   = nz(epsGrowth - prevEpsGrowth) * 100
-accStr      = (na(salesGrowth) or na(prevSalesGrowth)) ? "N/A" : str.format("S:{0,number,#.#}% E:{1,number,#.#}%", salesAccVal, epsAccVal)
+accelerationStr = na(salesAcceleration) or na(epsAcceleration) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
 
-// --- Sector & Industry Strength ---
-// Determine Sector ETF
-sectorETF = switch syminfo.sector
-    "Technology Services"     => "XLK"
-    "Electronic Technology"   => "XLK"
-    "Finance"                 => "XLF"
-    "Health Technology"       => "XLV"
-    "Health Services"         => "XLV"
-    "Retail Trade"            => "XLY"
-    "Consumer Non-Durables"   => "XLP"
-    "Consumer Durables"       => "XLY"
-    "Consumer Services"       => "XLY"
-    "Producer Manufacturing"  => "XLI"
-    "Energy Minerals"         => "XLE"
-    "Utilities"               => "XLU"
-    "Communications"          => "XLC"
-    "Process Industries"      => "XLB"
-    "Transportation"          => "XLI"
-    "Non-Energy Minerals"     => "PICK"
-    "Industrial Services"     => "XLI"
-    "Commercial Services"     => "XLI"
-    "Distribution Services"   => "XLI"
-    => "SPY" // Default
+// --- G. Enhanced Sector & Industry Logic ---
+// 1. Determine if Crypto
+isCrypto = syminfo.type == "crypto" //or str.contains(syminfo.name, "USDT") or str.contains(syminfo.name, "USD")
 
-// Determine Industry ETF (Granular)
+// 2. Sector ETF Mapping
+sectorETF = switch 
+    isCrypto => "CRYPTOCAP:TOTAL"
+    syminfo.sector == "Technology Services"     => "XLK"
+    syminfo.sector == "Electronic Technology"   => "XLK"
+    syminfo.sector == "Finance"                 => "XLF"
+    syminfo.sector == "Health Technology"       => "XLV"
+    syminfo.sector == "Health Services"         => "XLV"
+    syminfo.sector == "Retail Trade"            => "XLY"
+    syminfo.sector == "Consumer Non-Durables"   => "XLP"
+    syminfo.sector == "Consumer Durables"       => "XLY"
+    syminfo.sector == "Consumer Services"       => "XLY"
+    syminfo.sector == "Producer Manufacturing"  => "XLI"
+    syminfo.sector == "Energy Minerals"         => "XLE"
+    syminfo.sector == "Utilities"               => "XLU"
+    syminfo.sector == "Communications"          => "XLC"
+    syminfo.sector == "Process Industries"      => "XLB"
+    syminfo.sector == "Transportation"          => "IYT"
+    syminfo.sector == "Non-Energy Minerals"     => "XLB"
+    => "SPY"
+
+// 3. Granular Industry ETF Mapping
 industryLower = str.lower(syminfo.industry)
 industryETF = switch
-    str.contains(industryLower, "precious metals") or str.contains(industryLower, "gold") => "GOAU"
-    str.contains(industryLower, "steel") => "SLX"
-    str.contains(industryLower, "construction") or str.contains(industryLower, "building") => "XHB"
-    str.contains(industryLower, "semiconductor") => "SMH"
-    str.contains(industryLower, "aerospace") or str.contains(industryLower, "defense") => "ITA"
-    str.contains(industryLower, "oil") or str.contains(industryLower, "gas") => "XOP"
-    str.contains(industryLower, "biotechnology") => "XBI"
-    str.contains(industryLower, "software") => "IGV"
+    isCrypto => "CRYPTOCAP:BTC" // Benchmark against BTC for crypto alts
+    str.contains(industryLower, "gold") => "GDX"
+    str.contains(industryLower, "silver") => "SIL"
+    str.contains(industryLower, "uranium") => "URA"
     str.contains(industryLower, "solar") => "TAN"
-    => sectorETF // Fallback
+    str.contains(industryLower, "semiconductor") => "SMH"
+    str.contains(industryLower, "software") => "IGV"
+    str.contains(industryLower, "cyber") => "HACK"
+    str.contains(industryLower, "biotech") => "XBI"
+    str.contains(industryLower, "medical devices") => "IHI"
+    str.contains(industryLower, "homebuilding") or str.contains(industryLower, "construction") => "XHB"
+    str.contains(industryLower, "oil") and str.contains(industryLower, "services") => "OIH"
+    str.contains(industryLower, "oil") and str.contains(industryLower, "exploration") => "XOP"
+    str.contains(industryLower, "aerospace") => "ITA"
+    str.contains(industryLower, "bank") and str.contains(industryLower, "regional") => "KRE"
+    str.contains(industryLower, "internet") => "FDN"
+    => sectorETF
 
-// Fetch ETF Data
-[sectorClose, industryClose, spyClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close), request.security(industryETF, "D", close), request.security("SPY", "D", close)])
+// 4. Fetch Data
+[sectorClose, industryClose, benchmarkClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close), request.security(industryETF, "D", close), request.security("SPY", "D", close)])
 
-// Calculate Relative Performance (20 Day)
-calc_rel_perf(asset, benchmark) =>
-    n20 = math.min(bar_index, 20)
-    assetPerf = asset / asset[n20] - 1
-    benchPerf = benchmark / benchmark[n20] - 1
-    assetPerf - benchPerf
+// 5. Calculate Rel Perf (20D)
+calc_rel(asset, bench) =>
+    val = asset / asset[20] - 1
+    b_val = bench / bench[20] - 1
+    val - b_val
 
-sectorRelPerf   = calc_rel_perf(sectorClose, spyClose)
-industryRelPerf = calc_rel_perf(industryClose, spyClose)
+secRS = calc_rel(sectorClose, benchmarkClose)
+indRS = calc_rel(industryClose, benchmarkClose)
 
-isSectorStrong = sectorRelPerf > 0.02
-isSectorWeak   = sectorRelPerf < -0.02
-
-isIndustryStrong = industryRelPerf > 0.02
-isIndustryWeak   = industryRelPerf < -0.02
-
-sectorStrDisplay = na(sectorRelPerf) ? "N/A" : str.format("{0} ({1})\n{2,number,#.#}% vs SPY", syminfo.sector, sectorETF, sectorRelPerf * 100)
-industryStrDisplay = na(industryRelPerf) ? "N/A" : str.format("{0} ({1})\n{2,number,#.#}% vs SPY", syminfo.industry, industryETF, industryRelPerf * 100)
+secStr = str.format("{0} ({1})", syminfo.sector, sectorETF)
+indStr = str.format("{0} ({1})", isCrypto ? "Crypto" : syminfo.industry, industryETF)
 
 // ==========================================
-// 3. VISUALIZATION (LAST BAR ONLY)
+// 3. VISUALIZATION
 // ==========================================
 
-// Helper to set row
-set_row(row, title, value, isGood, isBad, showCheck) =>
-    c_text = isBad ? color.red : isGood ? color.green : color.white
-    c_icon = isBad ? "❌" : isGood ? "✅" : ""
-    table.cell(checklistTable, 0, row, title, text_color=color.white, text_size=size.small, text_halign=text.align_left)
-    table.cell(checklistTable, 1, row, value, text_color=c_text, text_size=size.small)
-    if showCheck
-        table.cell(checklistTable, 2, row, c_icon, text_color=c_text, text_size=size.small)
+set_row(row, title, value, isGood, isBad) =>
+    c_val = isBad ? c_bear : isGood ? c_bull : c_text
+    icon = isBad ? "▼" : isGood ? "▲" : "•"
+    table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left)
+    table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right)
+    table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small)
 
 if barstate.islast
-    // Row 0: Earnings
-    set_row(0, "Earnings Date", earningsDateStr, false, isEarningsSoon, true)
+    // 1. Context
+    set_row(0, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
+    set_row(1, "Seasonality", monthStr, false, isWeakMonth)
+    set_row(2, "Earnings", earningsDateStr, false, isEarningsSoon)
     
-    // Row 1: Seasonality
-    set_row(1, "Seasonality", monthStr, false, isWeakMonth, true)
+    // 2. Technicals
+    set_row(3, "RS Rating", str.tostring(rsRating), isRSStrong, isRSWeak)
     
-    // Row 2: Market Sentiment
-    set_row(2, "Market Fear (VIX)", vixStr, isFear, isGreed, true)
+    // 3. Fundamentals
+    set_row(4, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
+    set_row(5, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
     
-    // Row 3: Sector
-    set_row(3, "Sector RS", sectorStrDisplay, isSectorStrong, isSectorWeak, true)
+    // 4. Group Strength
+    set_row(6, "Sector RS", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+    set_row(7, "Industry RS", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
     
-    // Row 4: Industry (Only if different from sector)
-    if industryETF != sectorETF
-        set_row(4, "Industry RS", industryStrDisplay, isIndustryStrong, isIndustryWeak, true)
-    else
-        table.cell(checklistTable, 0, 4, "Industry RS", text_color=color.gray)
-        table.cell(checklistTable, 1, 4, "Same as Sector", text_color=color.gray)
-        table.cell(checklistTable, 2, 4, "-", text_color=color.gray)
-
-    // Row 5: RS Rating
-    set_row(5, "RS Rating (0-99)", str.tostring(rsRating), isRSStrong, isRSWeak, true)
-    
-    // Row 6: Growth
-    set_row(6, "Sales/EPS Growth", salesEpsStr, isBothGrowing, isBothDeclining, true)
-    
-    // Row 7: Acceleration
-    set_row(7, "Growth Accel.", accStr, isBothAccelerating, isBothDecelerating, true)
+    // 5. Tickers Used
+    table.cell(checklistTable, 0, 8, "Ref: " + sectorETF, text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(checklistTable, 1, 8, "Ref: " + industryETF, text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
