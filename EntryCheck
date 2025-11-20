@@ -101,47 +101,159 @@ accelerationStr = na(salesAcceleration) or na(epsAcceleration) ? "N/A" : "S:" + 
 isCrypto = syminfo.type == "crypto" //or str.contains(syminfo.name, "USDT") or str.contains(syminfo.name, "USD")
 
 // 2. Sector ETF Mapping
-sectorETF = switch 
-    isCrypto => "CRYPTOCAP:TOTAL"
-    syminfo.sector == "Technology Services"     => "XLK"
-    syminfo.sector == "Electronic Technology"   => "XLK"
-    syminfo.sector == "Finance"                 => "XLF"
-    syminfo.sector == "Health Technology"       => "XLV"
-    syminfo.sector == "Health Services"         => "XLV"
-    syminfo.sector == "Retail Trade"            => "XLY"
-    syminfo.sector == "Consumer Non-Durables"   => "XLP"
-    syminfo.sector == "Consumer Durables"       => "XLY"
-    syminfo.sector == "Consumer Services"       => "XLY"
-    syminfo.sector == "Producer Manufacturing"  => "XLI"
-    syminfo.sector == "Energy Minerals"         => "XLE"
-    syminfo.sector == "Utilities"               => "XLU"
-    syminfo.sector == "Communications"          => "XLC"
-    syminfo.sector == "Process Industries"      => "XLB"
-    syminfo.sector == "Transportation"          => "IYT"
-    syminfo.sector == "Non-Energy Minerals"     => "XLB"
+sectorETF = switch syminfo.sector
+    "Technology Services"     => "XLK"
+    "Electronic Technology"   => "SOXX"
+    "Finance"                 => "XLF"
+    "Health Technology"       => "IBB"
+    "Retail Trade"            => "XRT"
+    "Consumer Non-Durables"   => "XLP"
+    "Producer Manufacturing"  => "XLI"
+    "Energy Minerals"         => "XLE"
+    "Consumer Durables"       => "XLY"
+    "Consumer Services"       => "XLY"
+    "Utilities"               => "XLU"
+    "Non-Energy Minerals"     => "XLB"
+    "Industrial Services"     => "XLI"
+    "Transportation"          => "IYT"
+    "Commercial Services"     => "XLI"
+    "Communications"          => "XLC"
+    "Process Industries"      => "XLB"
+    "Health Services"         => "XLV"
+    "Distribution Services"   => "XLY"
+    "Miscellaneous"           => "VTI"
     => "SPY"
 
 // 3. Granular Industry ETF Mapping
 industryLower = str.lower(syminfo.industry)
-industryETF = switch
-    isCrypto => "CRYPTOCAP:BTC" // Benchmark against BTC for crypto alts
-    str.contains(industryLower, "gold") => "GDX"
-    str.contains(industryLower, "silver") => "SIL"
-    str.contains(industryLower, "uranium") => "URA"
-    str.contains(industryLower, "solar") => "TAN"
-    str.contains(industryLower, "semiconductor") => "SMH"
-    str.contains(industryLower, "software") => "IGV"
-    str.contains(industryLower, "cyber") => "HACK"
-    str.contains(industryLower, "biotech") => "XBI"
-    str.contains(industryLower, "medical devices") => "IHI"
-    str.contains(industryLower, "homebuilding") or str.contains(industryLower, "construction") => "XHB"
-    str.contains(industryLower, "oil") and str.contains(industryLower, "services") => "OIH"
-    str.contains(industryLower, "oil") and str.contains(industryLower, "exploration") => "XOP"
-    str.contains(industryLower, "aerospace") => "ITA"
-    str.contains(industryLower, "bank") and str.contains(industryLower, "regional") => "KRE"
-    str.contains(industryLower, "internet") => "FDN"
-    => sectorETF
-
+industryETF = switch syminfo.industry
+    // Exact industry name matches first
+    "Advertising/Marketing Services" => "XLC"
+    "Aerospace & Defense" => "ITA"
+    "Agricultural Commodities/Milling" => "DBA"
+    "Air Freight/Couriers" => "IYT"
+    "Airlines" => "JETS"
+    "Alternative Power Generation" => "ICLN"
+    "Aluminum" => "XLB"
+    "Apparel/Footwear" => "XRT"
+    "Apparel/Footwear Retail" => "XRT"
+    "Auto Parts: OEM" => "CARZ"
+    "Automotive Aftermarket" => "CARZ"
+    "Beverages: Alcoholic" => "XLP"
+    "Beverages: Non-Alcoholic" => "XLP"
+    "Biotechnology" => "XBI"
+    "Broadcasting" => "XLC"
+    "Building Products" => "XHB"
+    "Cable/Satellite TV" => "XLC"
+    "Casinos/Gaming" => "BJK"
+    "Catalog/Specialty Distribution" => "XRT"
+    "Chemicals: Agricultural" => "XLB"
+    "Chemicals: Major Diversified" => "XLB"
+    "Chemicals: Specialty" => "XLB"
+    "Coal" => "KOL"
+    "Commercial Printing/Forms" => "XLI"
+    "Computer Communications" => "XLK"
+    "Computer Peripherals" => "XLK"
+    "Computer Processing Hardware" => "XLK"
+    "Construction Materials" => "XHB"
+    "Consumer Sundries" => "XLY"
+    "Containers/Packaging" => "XLI"
+    "Contract Drilling" => "XLE"
+    "Data Processing Services" => "XLK"
+    "Department Stores" => "XRT"
+    "Discount Stores" => "XRT"
+    "Drugstore Chains" => "XRT"
+    "Electric Utilities" => "XLU"
+    "Electrical Products" => "XLI"
+    "Electronic Components" => "XLK"
+    "Electronic Equipment/Instruments" => "XLK"
+    "Electronic Production Equipment" => "XLK"
+    "Electronics Distributors" => "XLK"
+    "Electronics/Appliance Stores" => "XRT"
+    "Electronics/Appliances" => "XLY"
+    "Engineering & Construction" => "XLI"
+    "Environmental Services" => "PBW"
+    "Finance/Rental/Leasing" => "XLF"
+    "Financial Conglomerates" => "XLF"
+    "Financial Publishing/Services" => "XLF"
+    "Food Distributors" => "XLP"
+    "Food Retail" => "XRT"
+    "Food: Major Diversified" => "XLP"
+    "Food: Meat/Fish/Dairy" => "XLP"
+    "Food: Specialty/Candy" => "XLP"
+    "Forest Products" => "WOOD"
+    "Gas Distributors" => "XLE"
+    "Home Furnishings" => "XHB"
+    "Home Improvement Chains" => "XHB"
+    "Homebuilding" => "XHB"
+    "Hospital/Nursing Management" => "XLV"
+    "Hotels/Resorts/Cruise Lines" => "XLY"
+    "Household/Personal Care" => "XLP"
+    "Industrial Conglomerates" => "XLI"
+    "Industrial Machinery" => "XLI"
+    "Industrial Specialties" => "XLI"
+    "Information Technology Services" => "XLK"
+    "Insurance Brokers/Services" => "XLF"
+    "Integrated Oil" => "XLE"
+    "Internet Retail" => "FDN"
+    "Internet Software/Services" => "FDN"
+    "Investment Banks/Brokers" => "XLF"
+    "Investment Managers" => "XLF"
+    "Investment Trusts/Mutual Funds" => "XLF"
+    "Life/Health Insurance" => "XLF"
+    "Major Banks" => "XLF"
+    "Major Telecommunications" => "XLC"
+    "Managed Health Care" => "XLV"
+    "Marine Shipping" => "SHIP"
+    "Media Conglomerates" => "XLC"
+    "Medical Distributors" => "XLV"
+    "Medical Specialties" => "XLV"
+    "Medical/Nursing Services" => "XLV"
+    "Metal Fabrication" => "XLB"
+    "Miscellaneous" => "VTI"
+    "Miscellaneous Commercial Services" => "XLI"
+    "Miscellaneous Manufacturing" => "XLI"
+    "Motor Vehicles" => "CARZ"
+    "Movies/Entertainment" => "XLY"
+    "Multi-Line Insurance" => "XLF"
+    "Office Equipment/Supplies" => "XLK"
+    "Oil & Gas Production" => "XOP"
+    "Oil & Gas Pipelines" => "AMLP"
+    "Oil Refining/Marketing" => "XLE"
+    "Packaged Software" => "IGV"
+    "Paper/Forest Products" => "WOOD"
+    "Pharmaceuticals: Major" => "XPH"
+    "Pharmaceuticals: Other" => "XPH"
+    "Precious Metals" => "PPLT"
+    "Publishing: Books/Magazines" => "XLC"
+    "Publishing: Newspapers" => "XLC"
+    "Real Estate Development" => "REM"
+    "Real Estate Investment Trusts" => "VNQ"
+    "Real Estate Management/Services" => "REM"
+    "Recreational Products" => "XLY"
+    "Restaurants" => "BITE"
+    "Retail: Apparel/Footwear" => "XRT"
+    "Retail: Automotive" => "CARZ"
+    "Retail: Building Materials" => "XHB"
+    "Retail: Computer/Electronics" => "XRT"
+    "Retail: Discount" => "XRT"
+    "Retail: Drugstore" => "XRT"
+    "Retail: General" => "XRT"
+    "Retail: Grocery" => "XRT"
+    "Retail: Home Improvement" => "XHB"
+    "Retail: Specialty" => "XRT"
+    "Semiconductors" => "SOXX"
+    "Specialty Telecommunications" => "XLC"
+    "Steel" => "SLX"
+    "Textiles" => "XRT"
+    "Tobacco" => "XLP"
+    "Transportation Infrastructure" => "IYT"
+    "Trucking" => "IYT"
+    "Utilities: Electric" => "XLU"
+    "Utilities: Gas" => "UGA"
+    "Utilities: Water" => "XLU"
+    "Wireless Telecommunications" => "XLC"
+    
 // 4. Fetch Data
 [sectorClose, industryClose, benchmarkClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close), request.security(industryETF, "D", close), request.security("SPY", "D", close)])
 
@@ -174,17 +286,18 @@ if barstate.islast
     set_row(1, "Seasonality", monthStr, false, isWeakMonth)
     set_row(2, "Earnings", earningsDateStr, false, isEarningsSoon)
     
-    // 2. Technicals
-    set_row(3, "RS Rating", str.tostring(rsRating), isRSStrong, isRSWeak)
+    // 2. Group Strength
+    set_row(3, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+    
+    // Only show Industry RS if different from Sector ETF
+    nextRow = 4
+    if sectorETF != industryETF
+        set_row(4, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+        nextRow := 5
     
     // 3. Fundamentals
-    set_row(4, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
-    set_row(5, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
+    set_row(nextRow, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
+    set_row(nextRow + 1, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
     
-    // 4. Group Strength
-    set_row(6, "Sector RS", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
-    set_row(7, "Industry RS", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
-    
-    // 5. Tickers Used
-    table.cell(checklistTable, 0, 8, "Ref: " + sectorETF, text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
-    table.cell(checklistTable, 1, 8, "Ref: " + industryETF, text_color=color.gray, text_size=size.tiny, text_halign=text.align_right)
+    // 4. Technicals
+    set_row(nextRow + 2, "RS Rating", str.tostring(rsRating), isRSStrong, isRSWeak)
