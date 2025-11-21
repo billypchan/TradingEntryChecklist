@@ -25,6 +25,12 @@ isBreadthOversold = s5th < 20
 isBreadthOverbought = s5th > 80
 s5thStr = str.tostring(s5th, "#.##") + "%"
 
+// --- A2. Greed/Fear Index (VIX) ---
+vix = request.security("CBOE:VIX", "D", close)
+vixStr = na(vix) ? "N/A" : str.tostring(vix, "#.##")
+isGreed = vix <= 15
+isFear = vix >= 25
+
 // --- B. Earnings Date Check ---
 earningsTime = earnings.future_time
 daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 : na
@@ -33,7 +39,25 @@ earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd}", e
 
 // --- C. Seasonality ---
 currentMonth = month(timenow)
-isWeakMonth = currentMonth == 5 or currentMonth == 8 or currentMonth == 9 // May, Aug, Sep
+// Historical S&P 500 monthly returns (average)
+monthlyReturns = switch currentMonth
+    1 => 1.07   // January
+    2 => -0.01  // February
+    3 => 1.13   // March
+    4 => 1.46   // April
+    5 => 0.30   // May
+    6 => 0.11   // June
+    7 => 1.28   // July
+    8 => -0.01  // August
+    9 => -0.72  // September
+    10 => 0.91  // October
+    11 => 1.82  // November
+    12 => 1.49  // December
+    => 0.00
+    
+isWeakMonth = monthlyReturns < 0.50 // Months with <0.50% average return
+isStrongMonth = monthlyReturns > 1.40 // Months with >1.40% average return
+
 monthName = switch currentMonth
     1 => "Jan"
     2 => "Feb"
@@ -48,7 +72,10 @@ monthName = switch currentMonth
     11 => "Nov"
     12 => "Dec"
     => "N/A"
-monthStr = str.format("{0} ({1})", monthName, isWeakMonth ? "Weak" : "Neut")
+
+seasonalityLabel = isWeakMonth ? "W" : isStrongMonth ? "S" : "N"
+monthStr = str.format("{0} ({1}%)", monthName, str.tostring(monthlyReturns, "#.##"))
+seasonalStr = str.format("{0} ({1})", monthStr, seasonalityLabel)
 
 // --- D. RS Rating vs SPX (IBD Style) ---
 [spxClose, stockClose] = request.security(syminfo.tickerid, "D", [request.security("SP:SPX", "D", close), close])
@@ -150,7 +177,7 @@ industryETF = switch syminfo.industry
     "Chemicals: Agricultural" => "XLB"
     "Chemicals: Major Diversified" => "XLB"
     "Chemicals: Specialty" => "XLB"
-    "Coal" => "KOL"
+    "Coal" => "COAL"
     "Commercial Printing/Forms" => "XLI"
     "Computer Communications" => "XLK"
     "Computer Peripherals" => "XLK"
@@ -231,7 +258,7 @@ industryETF = switch syminfo.industry
     "Real Estate Investment Trusts" => "VNQ"
     "Real Estate Management/Services" => "REM"
     "Recreational Products" => "XLY"
-    "Restaurants" => "BITE"
+    "Restaurants" => "EATZ"
     "Retail: Apparel/Footwear" => "XRT"
     "Retail: Automotive" => "CARZ"
     "Retail: Building Materials" => "XHB"
@@ -242,6 +269,7 @@ industryETF = switch syminfo.industry
     "Retail: Grocery" => "XRT"
     "Retail: Home Improvement" => "XHB"
     "Retail: Specialty" => "XRT"
+    "Specialty Stores" => "XRT"
     "Semiconductors" => "SOXX"
     "Specialty Telecommunications" => "XLC"
     "Steel" => "SLX"
@@ -283,17 +311,18 @@ set_row(row, title, value, isGood, isBad) =>
 if barstate.islast
     // 1. Context
     set_row(0, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
-    set_row(1, "Seasonality", monthStr, false, isWeakMonth)
-    set_row(2, "Earnings", earningsDateStr, false, isEarningsSoon)
+    set_row(1, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
+    set_row(2, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
+    set_row(3, "Earnings", earningsDateStr, false, isEarningsSoon)
     
     // 2. Group Strength
-    set_row(3, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+    set_row(4, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
     
     // Only show Industry RS if different from Sector ETF
-    nextRow = 4
+    nextRow = 5
     if sectorETF != industryETF
-        set_row(4, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
-        nextRow := 5
+        set_row(5, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+        nextRow := 6
     
     // 3. Fundamentals
     set_row(nextRow, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
