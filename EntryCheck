@@ -294,6 +294,21 @@ calc_rel(asset, bench) =>
 secRS = calc_rel(sectorClose, benchmarkClose)
 indRS = calc_rel(industryClose, benchmarkClose)
 
+// --- Additional RS Ratings vs Sector & Industry ---
+// D2. RS Rating vs Sector ETF
+perfSector = 0.4 * calc_roc(sectorClose, 63) + 0.2 * calc_roc(sectorClose, 126) + 0.2 * calc_roc(sectorClose, 189) + 0.2 * calc_roc(sectorClose, 252)
+rsSectorScore = perfSector != 0 ? perfStock / perfSector * 100 : 0
+rsSectorRating = rsSectorScore >= 120 ? 99 : rsSectorScore >= 110 ? 90 : rsSectorScore >= 100 ? 80 : rsSectorScore >= 95 ? 70 : rsSectorScore >= 90 ? 60 : rsSectorScore >= 85 ? 50 : rsSectorScore >= 75 ? 40 : rsSectorScore >= 65 ? 30 : rsSectorScore >= 55 ? 20 : rsSectorScore >= 45 ? 10 : 1
+isSectorRSWeak = rsSectorRating < 65
+isSectorRSStrong = rsSectorRating >= 80
+
+// D3. RS Rating vs Industry ETF
+perfIndustry = 0.4 * calc_roc(industryClose, 63) + 0.2 * calc_roc(industryClose, 126) + 0.2 * calc_roc(industryClose, 189) + 0.2 * calc_roc(industryClose, 252)
+rsIndustryScore = perfIndustry != 0 ? perfStock / perfIndustry * 100 : 0
+rsIndustryRating = rsIndustryScore >= 120 ? 99 : rsIndustryScore >= 110 ? 90 : rsIndustryScore >= 100 ? 80 : rsIndustryScore >= 95 ? 70 : rsIndustryScore >= 90 ? 60 : rsIndustryScore >= 85 ? 50 : rsIndustryScore >= 75 ? 40 : rsIndustryScore >= 65 ? 30 : rsIndustryScore >= 55 ? 20 : rsIndustryScore >= 45 ? 10 : 1
+isIndustryRSWeak = rsIndustryRating < 65
+isIndustryRSStrong = rsIndustryRating >= 80
+
 secStr = str.format("{0} ({1})", syminfo.sector, sectorETF)
 indStr = str.format("{0} ({1})", isCrypto ? "Crypto" : syminfo.industry, industryETF)
 
@@ -329,4 +344,11 @@ if barstate.islast
     set_row(nextRow + 1, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
     
     // 4. Technicals
-    set_row(nextRow + 2, "RS Rating", str.tostring(rsRating), isRSStrong, isRSWeak)
+    set_row(nextRow + 2, "RS vs SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
+    set_row(nextRow + 3, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
+    
+    // Show Industry RS Rating only if different ETF
+    finalRow = nextRow + 4
+    if sectorETF != industryETF
+        set_row(nextRow + 4, "RS vs Industry", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+        finalRow := nextRow + 5
