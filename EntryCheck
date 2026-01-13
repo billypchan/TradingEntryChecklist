@@ -1,5 +1,38 @@
 //@version=5
-indicator("Advanced Entry Checklist [GenAI]", shorttitle = "Entry Checklist Pro", overlay = true, dynamic_requests = true)
+indicator("Entry Checklist", shorttitle = "Entry Checklist Pro", overlay = true, dynamic_requests = true)
+
+// Entry Checklist
+// A comprehensive multi-factor analysis tool for stock and crypto entry decisions, combining fundamental, technical, and market sentiment indicators in a dynamic table display.
+
+// 🎯 Overview
+// This advanced Pine Script indicator provides traders and investors with a systematic checklist for evaluating potential entry points. It consolidates critical market data into a clean, color-coded table that adapts based on asset type and data availability.
+
+// 📊 Key Features
+// Market Context Analysis:
+
+// Seasonality: Historical S&P 500 monthly return patterns with strength/weakness labels
+// Market Breadth (S5TH): Percentage of S&P 500 stocks above their 50-day moving average
+// Fear/Greed Index (VIX): Market sentiment indicator with threshold-based color coding
+// Fundamental Analysis (Stocks Only):
+
+// Earnings Dates: Upcoming earnings announcement tracking with 14-day warning
+// Growth Metrics: Year-over-year sales and EPS growth rates
+// Acceleration: Quarter-over-quarter growth acceleration analysis
+// Sector & Industry Analysis:
+
+// Sector Relative Strength: 20-day performance vs SPY benchmark
+// Industry Relative Strength: Granular industry ETF performance comparison
+// 120+ Industry ETF Mappings: Comprehensive sector and industry classifications
+// Technical Analysis:
+
+// IBD-Style RS Rating: Multi-timeframe relative strength scoring (1-99 scale)
+// RS vs SPX: Stock performance relative to S&P 500
+// RS vs Sector: Performance relative to sector ETF
+// RS vs Industry: Performance relative to industry ETF
+// 🎨 Visual Design
+// Dynamic Table: Bottom-right overlay with professional dark theme
+// Color-Coded Signals: Green (bullish), red (bearish), neutral (white)
+
 
 // ==========================================
 // 1. CONFIGURATION & SETUP
@@ -361,7 +394,7 @@ if barstate.islast
         
         // Add section separator after fundamentals if any were shown
         if nextFundamentalRow > 1
-            set_row(nextFundamentalRow, "──────────────────────────", "", false, false)
+            set_row(nextFundamentalRow, "─────────────", "", false, false)
             nextFundamentalRow := nextFundamentalRow + 1
     
     // 3. Market Context
