@@ -1,5 +1,5 @@
 //@version=5
-indicator("Advanced Entry Checklist [GenAI]", shorttitle = "Entry Checklist Pro", overlay = true)
+indicator("Advanced Entry Checklist [GenAI]", shorttitle = "Entry Checklist Pro", overlay = true, dynamic_requests = true)
 
 // ==========================================
 // 1. CONFIGURATION & SETUP
@@ -92,41 +92,54 @@ rsRating = rsScore >= 120 ? 99 : rsScore >= 110 ? 90 : rsScore >= 100 ? 80 : rsS
 isRSWeak = rsRating < 65
 isRSStrong = rsRating >= 80
 
+// --- Determine if Crypto ---
+isCrypto = syminfo.type == "crypto"
+
 // --- E. Growth Metrics ---
-salesTTM = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
-epsTTM   = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
-salesTTM_1Y = salesTTM[252]
-epsTTM_1Y   = epsTTM[252]
+// Only fetch financial data for non-crypto assets
+var float salesTTM = na
+var float epsTTM = na
+var float salesTTM_1Y = na
+var float epsTTM_1Y = na
+
+if not isCrypto
+    salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
+    epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
+    salesTTM_1Y := salesTTM[252]
+    epsTTM_1Y := epsTTM[252]
+
 calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
 salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
-epsGrowth   = calc_growth(epsTTM, epsTTM_1Y)
-salesEpsStr = (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
-isGrowthStrong = nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
+epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
+salesEpsStr = isCrypto ? "Crypto" : (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
+isGrowthStrong = not isCrypto and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
 
 // --- F. Earnings Acceleration Check ---
 // Check if current quarter growth is accelerating vs previous quarter
-salesTTM_Q1 = salesTTM[63] // Reuse fetched data
-epsTTM_Q1   = epsTTM[63]
+// Skip for crypto assets
+var float salesTTM_Q1 = na
+var float epsTTM_Q1 = na
+
+if not isCrypto and not na(salesTTM) and not na(epsTTM)
+    salesTTM_Q1 := salesTTM[63] // Reuse fetched data
+    epsTTM_Q1 := epsTTM[63]
 
 // Calculate previous quarter's year-over-year growth rate
-prevSalesGrowth = not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
-prevEpsGrowth   = not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
+prevSalesGrowth = not isCrypto and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth = not isCrypto and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
 
 // Check if growth is accelerating (current growth > previous quarter growth)
-isSalesAccelerating = not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
-isEpsAccelerating   = not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
-isBothAccelerating  = isSalesAccelerating and isEpsAccelerating
+isSalesAccelerating = not isCrypto and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating = not isCrypto and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
+isBothAccelerating = not isCrypto and isSalesAccelerating and isEpsAccelerating
 
 // Calculate acceleration rate
-salesAcceleration = not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
-epsAcceleration   = not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
+salesAcceleration = not isCrypto and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
+epsAcceleration = not isCrypto and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
 
-accelerationStr = na(salesAcceleration) or na(epsAcceleration) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
+accelerationStr = isCrypto ? "Crypto" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
 
 // --- G. Enhanced Sector & Industry Logic ---
-// 1. Determine if Crypto
-isCrypto = syminfo.type == "crypto" //or str.contains(syminfo.name, "USDT") or str.contains(syminfo.name, "USD")
-
 // 2. Sector ETF Mapping
 sectorETF = switch syminfo.sector
     "Technology Services"     => "XLK"
@@ -328,25 +341,33 @@ if barstate.islast
     // 1. Context
     set_row(0, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
     
-    // 2. Fundamentals
-    set_row(1, "Earnings", earningsDateStr, false, isEarningsSoon)
-    set_row(2, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
-    set_row(3, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
+    // 2. Fundamentals (skip for crypto)
+    nextFundamentalRow = 1
+    if not isCrypto
+        set_row(1, "Earnings", earningsDateStr, false, isEarningsSoon)
+        set_row(2, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
+        set_row(3, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
+        nextFundamentalRow := 4
+    
+    // 3. Market Context
+    set_row(nextFundamentalRow, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
+    set_row(nextFundamentalRow + 1, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
 
-        set_row(1, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
-    set_row(4, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
-
-
-    // 3. Group Strength
-    set_row(5, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+    // 4. Group Strength
+    sectorRow = nextFundamentalRow + 2
+    nextRow = sectorRow
+    
+    // Only show Sector RS if not SPY
+    if sectorETF != "SPY"
+        set_row(nextRow, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+        nextRow := nextRow + 1
     
     // Only show Industry RS if valid ETF found and different from Sector ETF
-    nextRow = 6
     if not na(industryETF) and sectorETF != industryETF
-        set_row(7, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
-        nextRow := 8
+        set_row(nextRow, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+        nextRow := nextRow + 1
     
-    // 4. Technicals
+    // 5. Technicals
     set_row(nextRow, "RS vs SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
     set_row(nextRow + 1, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
     
