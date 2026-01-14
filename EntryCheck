@@ -64,8 +64,19 @@ vixStr = na(vix) ? "N/A" : str.tostring(vix, "#.##")
 isGreed = vix <= 15
 isFear = vix >= 25
 
+// --- Determine if asset has fundamental data ---
+isCrypto = syminfo.type == "crypto"
+isCommodity = syminfo.type == "commodity"
+isForex = syminfo.type == "forex" 
+isIndex = syminfo.type == "index"
+isFund = syminfo.type == "fund"
+
+// Only stocks have fundamental data
+hasFinancialData = syminfo.type == "stock"
+
 // --- B. Earnings Date Check ---
-earningsTime = earnings.future_time
+// Only fetch earnings data for stocks
+earningsTime = hasFinancialData ? earnings.future_time : na
 daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 : na
 isEarningsSoon = not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
 earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd}", earningsTime)
@@ -125,17 +136,14 @@ rsRating = rsScore >= 120 ? 99 : rsScore >= 110 ? 90 : rsScore >= 100 ? 80 : rsS
 isRSWeak = rsRating < 65
 isRSStrong = rsRating >= 80
 
-// --- Determine if Crypto ---
-isCrypto = syminfo.type == "crypto"
-
 // --- E. Growth Metrics ---
-// Only fetch financial data for non-crypto assets
+// Only fetch financial data for stocks
 var float salesTTM = na
 var float epsTTM = na
 var float salesTTM_1Y = na
 var float epsTTM_1Y = na
 
-if not isCrypto
+if hasFinancialData
     salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
     epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
     salesTTM_1Y := salesTTM[252]
@@ -144,8 +152,8 @@ if not isCrypto
 calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
 salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
 epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
-salesEpsStr = isCrypto ? "Crypto" : (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
-isGrowthStrong = not isCrypto and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
+salesEpsStr = not hasFinancialData ? "No Data" : (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
+isGrowthStrong = hasFinancialData and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
 
 // --- F. Earnings Acceleration Check ---
 // Check if current quarter growth is accelerating vs previous quarter
@@ -153,24 +161,24 @@ isGrowthStrong = not isCrypto and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.1
 var float salesTTM_Q1 = na
 var float epsTTM_Q1 = na
 
-if not isCrypto and not na(salesTTM) and not na(epsTTM)
+if hasFinancialData and not na(salesTTM) and not na(epsTTM)
     salesTTM_Q1 := salesTTM[63] // Reuse fetched data
     epsTTM_Q1 := epsTTM[63]
 
 // Calculate previous quarter's year-over-year growth rate
-prevSalesGrowth = not isCrypto and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
-prevEpsGrowth = not isCrypto and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
+prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth = hasFinancialData and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
 
 // Check if growth is accelerating (current growth > previous quarter growth)
-isSalesAccelerating = not isCrypto and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
-isEpsAccelerating = not isCrypto and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
-isBothAccelerating = not isCrypto and isSalesAccelerating and isEpsAccelerating
+isSalesAccelerating = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
+isBothAccelerating = hasFinancialData and isSalesAccelerating and isEpsAccelerating
 
 // Calculate acceleration rate
-salesAcceleration = not isCrypto and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
-epsAcceleration = not isCrypto and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
+salesAcceleration = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
+epsAcceleration = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
 
-accelerationStr = isCrypto ? "Crypto" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
+accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
 
 // --- G. Enhanced Sector & Industry Logic ---
 // 2. Sector ETF Mapping
@@ -356,8 +364,11 @@ rsIndustryRating = rsIndustryScore >= 120 ? 99 : rsIndustryScore >= 110 ? 90 : r
 isIndustryRSWeak = rsIndustryRating < 65
 isIndustryRSStrong = rsIndustryRating >= 80
 
+// Get asset type display name
+assetTypeStr = isCrypto ? "Crypto" : isCommodity ? "Commodity" : isForex ? "Forex" : isIndex ? "Index" : isFund ? "Fund" : "Stock"
+
 secStr = str.format("{0} ({1})", syminfo.sector, sectorETF)
-indStr = str.format("{0} ({1})", isCrypto ? "Crypto" : syminfo.industry, industryETF)
+indStr = str.format("{0} ({1})", hasFinancialData ? syminfo.industry : assetTypeStr, industryETF)
 
 // ==========================================
 // 3. VISUALIZATION
@@ -374,9 +385,9 @@ if barstate.islast
     // 1. Context
     set_row(0, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
     
-    // 2. Fundamentals (skip for crypto and when data is N/A)
+    // 2. Fundamentals (only for stocks with available data)
     nextFundamentalRow = 1
-    if not isCrypto
+    if hasFinancialData
         // Show earnings only if available
         if not na(earningsTime)
             set_row(nextFundamentalRow, "Earnings", earningsDateStr, false, isEarningsSoon)
