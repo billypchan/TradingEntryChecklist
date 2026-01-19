@@ -37,7 +37,11 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // ==========================================
 // test cases:
 // CRWV - US stock 
-// VOD - ADR
+// VOD - DR
+// VIX - verify no fundamental data errors, and VIX is correct
+// S5TH - verify S5TH is correct
+// BTCUSD - crypto asset, verify no fundamental data errors
+// SPX - verify RS = 80
 // ==========================================
 
 // ==========================================
@@ -419,9 +423,12 @@ if barstate.islast
     // 3. Market Context
     set_row(nextFundamentalRow, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
     set_row(nextFundamentalRow + 1, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
+    
+    // Add separator after market context
+    set_row(nextFundamentalRow + 2, "─────────────", "", false, false)
 
     // 4. Group Strength
-    sectorRow = nextFundamentalRow + 2
+    sectorRow = nextFundamentalRow + 3
     nextRow = sectorRow
     
     // Only show Sector RS if not SPY
