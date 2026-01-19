@@ -1,5 +1,5 @@
 //@version=5
-indicator("Entry Checklist", shorttitle = "Entry Checklist Pro", overlay = true, dynamic_requests = true)
+indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_requests = true)
 
 // Entry Checklist
 // A comprehensive multi-factor analysis tool for stock and crypto entry decisions, combining fundamental, technical, and market sentiment indicators in a dynamic table display.
