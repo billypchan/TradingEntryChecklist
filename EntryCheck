@@ -35,6 +35,12 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 
 
 // ==========================================
+// test cases:
+// CRWV - US stock 
+// VOD - ADR
+// ==========================================
+
+// ==========================================
 // 1. CONFIGURATION & SETUP
 // ==========================================
 
@@ -71,12 +77,10 @@ isForex = syminfo.type == "forex"
 isIndex = syminfo.type == "index"
 isFund = syminfo.type == "fund"
 
-// Only stocks have fundamental data
-hasFinancialData = syminfo.type == "stock"
-
 // --- B. Earnings Date Check ---
-// Only fetch earnings data for stocks
-earningsTime = hasFinancialData ? earnings.future_time : na
+// Try to get earnings data to determine if financial data is available
+earningsTime = earnings.future_time
+hasFinancialData = not na(earningsTime)
 daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 : na
 isEarningsSoon = not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
 earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd}", earningsTime)
@@ -382,6 +386,10 @@ set_row(row, title, value, isGood, isBad) =>
     table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small)
 
 if barstate.islast
+    // Debug: Log asset type when not a stock
+    if not hasFinancialData
+        log.error("DEBUG: Asset type detected - " + syminfo.type)
+    
     // 1. Context
     set_row(0, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
     
