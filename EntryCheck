@@ -37,6 +37,7 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // ==========================================
 // test cases:
 // CRWV - US stock 
+// CRWV - US stock with sector/industry
 // VOD - DR
 // VIX - verify no fundamental data errors, and VIX is correct
 // S5TH - verify S5TH is correct
@@ -49,7 +50,7 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // ==========================================
 
 // Table Configuration
-var table checklistTable = table.new(position.bottom_right, 3, 12, bgcolor=color.rgb(19, 23, 34, 10), frame_width=1, frame_color=color.rgb(42, 46, 57), border_width=1)
+var table checklistTable = table.new(position.bottom_right, 3, 20, bgcolor=color.rgb(19, 23, 34, 10), frame_width=1, frame_color=color.rgb(42, 46, 57), border_width=1)
 
 // Colors
 c_bull = #00E396
@@ -383,73 +384,77 @@ indStr = str.format("{0} ({1})", hasFinancialData ? syminfo.industry : assetType
 // ==========================================
 
 set_row(row, title, value, isGood, isBad) =>
-    c_val = isBad ? c_bear : isGood ? c_bull : c_text
-    icon = isBad ? "▼" : isGood ? "▲" : "•"
-    table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left)
-    table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right)
-    table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small)
+    if row < 20  // Safety check to prevent out of bounds
+        c_val = isBad ? c_bear : isGood ? c_bull : c_text
+        icon = isBad ? "▼" : isGood ? "▲" : "•"
+        table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left)
+        table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right)
+        table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small)
 
 if barstate.islast
     // Debug: Log asset type when not a stock
     if not hasFinancialData
         log.error("DEBUG: Asset type detected - " + syminfo.type)
     
+    // Initialize row counter
+    currentRow = 0
+    
     // 1. Context
-    set_row(0, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
+    set_row(currentRow, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
+    currentRow := currentRow + 1
     
     // 2. Fundamentals (only for stocks with available data)
-    nextFundamentalRow = 1
     if hasFinancialData
         // Show earnings only if available
         if not na(earningsTime)
-            set_row(nextFundamentalRow, "Earnings", earningsDateStr, false, isEarningsSoon)
-            nextFundamentalRow := nextFundamentalRow + 1
+            set_row(currentRow, "Earnings", earningsDateStr, false, isEarningsSoon)
+            currentRow := currentRow + 1
         
         // Show growth only if data available
         if not (na(salesGrowth) or na(epsGrowth))
-            set_row(nextFundamentalRow, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
-            nextFundamentalRow := nextFundamentalRow + 1
+            set_row(currentRow, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
+            currentRow := currentRow + 1
         
         // Show acceleration only if data available
         if not (na(salesAcceleration) or na(epsAcceleration))
-            set_row(nextFundamentalRow, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
-            nextFundamentalRow := nextFundamentalRow + 1
+            set_row(currentRow, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
+            currentRow := currentRow + 1
         
         // Add section separator after fundamentals if any were shown
-        if nextFundamentalRow > 1
-            set_row(nextFundamentalRow, "─────────────", "", false, false)
-            nextFundamentalRow := nextFundamentalRow + 1
+        if currentRow > 1
+            set_row(currentRow, "─────────────", "", false, false)
+            currentRow := currentRow + 1
     
     // 3. Market Context
-    set_row(nextFundamentalRow, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
-    set_row(nextFundamentalRow + 1, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
+    set_row(currentRow, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
+    currentRow := currentRow + 1
+    set_row(currentRow, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
+    currentRow := currentRow + 1
     
     // Add separator after market context
-    set_row(nextFundamentalRow + 2, "─────────────", "", false, false)
+    set_row(currentRow, "─────────────", "", false, false)
+    currentRow := currentRow + 1
 
     // 4. Group Strength
-    sectorRow = nextFundamentalRow + 3
-    nextRow = sectorRow
-    
     // Only show Sector RS if not SPY
     if sectorETF != "SPY"
-        set_row(nextRow, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
-        nextRow := nextRow + 1
+        set_row(currentRow, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+        currentRow := currentRow + 1
     
     // Only show Industry RS if valid ETF found and different from Sector ETF
     if not na(industryETF) and sectorETF != industryETF
-        set_row(nextRow, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
-        nextRow := nextRow + 1
+        set_row(currentRow, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+        currentRow := currentRow + 1
     
     // 5. Technicals
-    set_row(nextRow, "RS vs SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
-    nextTechnicalRow = nextRow + 1
+    set_row(currentRow, "RS vs SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
+    currentRow := currentRow + 1
     
     // Only show RS vs Sector if not SPY (avoid duplicate of RS vs SPX)
     if sectorETF != "SPY"
-        set_row(nextTechnicalRow, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
-        nextTechnicalRow := nextTechnicalRow + 1
+        set_row(currentRow, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
+        currentRow := currentRow + 1
     
     // Show Industry RS Rating only if valid ETF found and different ETF
     if not na(industryETF) and sectorETF != industryETF
-        set_row(nextTechnicalRow, "RS vs Industry", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+        set_row(currentRow, "RS vs Industry", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
