@@ -38,13 +38,15 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // test cases:
 // CRWV - US stock 
 // CRWV - US stock with sector/industry
-// VOD - DR
+// VOD - DR /ADR
 // VIX - verify no fundamental data errors, and VIX is correct
 // S5TH - verify S5TH is correct
 // BTCUSD - crypto asset, verify no fundamental data errors
 // SPX - verify RS = 80
 // MT - SLX should be industry ETF, not a stock ticker
 // NVO - verify industry ETF mapping works NASDAQ:IBB
+// MSTR - verify industry ETF mapping works AMEX:FDN
+// HCC - verify industry ETF mapping works XLE
 // ==========================================
 
 // ==========================================
@@ -216,136 +218,209 @@ sectorETF = switch syminfo.sector
     "Miscellaneous"           => "AMEX:VTI"
     => "AMEX:SPY"
 
-// 3. Granular Industry ETF Mapping (AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs)
+// 3. Granular Industry ETF Mapping 
+// Using largest AUM ETFs from etfdb.com/etfs/industry/ for best liquidity
+// Format: AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs
 industryLower = str.lower(syminfo.industry)
 industryETF = switch syminfo.industry
-    // Exact industry name matches first
+    // Advertising & Media
     "Advertising/Marketing Services" => "AMEX:XLC"
-    "Aerospace & Defense" => "AMEX:ITA"
-    "Agricultural Commodities/Milling" => "AMEX:DBA"
-    "Air Freight/Couriers" => "AMEX:IYT"
-    "Airlines" => "AMEX:JETS"
-    "Alternative Power Generation" => "NASDAQ:ICLN"
-    "Aluminum" => "AMEX:XLB"
-    "Apparel/Footwear" => "AMEX:XRT"
-    "Apparel/Footwear Retail" => "AMEX:XRT"
-    "Auto Parts: OEM" => "NASDAQ:CARZ"
-    "Automotive Aftermarket" => "NASDAQ:CARZ"
-    "Beverages: Alcoholic" => "AMEX:XLP"
-    "Beverages: Non-Alcoholic" => "AMEX:XLP"
-    "Biotechnology" => "AMEX:XBI"
     "Broadcasting" => "AMEX:XLC"
-    "Building Products" => "AMEX:XHB"
     "Cable/Satellite TV" => "AMEX:XLC"
-    "Casinos/Gaming" => "AMEX:BJK"
-    "Catalog/Specialty Distribution" => "AMEX:XRT"
-    "Chemicals: Agricultural" => "AMEX:XLB"
-    "Chemicals: Major Diversified" => "AMEX:XLB"
-    "Chemicals: Specialty" => "AMEX:XLB"
-    "Coal" => "AMEX:KOL"
-    "Commercial Printing/Forms" => "AMEX:XLI"
-    "Computer Communications" => "AMEX:XLK"
-    "Computer Peripherals" => "AMEX:XLK"
-    "Computer Processing Hardware" => "AMEX:XLK"
-    "Construction Materials" => "AMEX:XHB"
-    "Consumer Sundries" => "AMEX:XLY"
-    "Containers/Packaging" => "AMEX:XLI"
-    "Contract Drilling" => "AMEX:XLE"
-    "Data Processing Services" => "AMEX:XLK"
-    "Department Stores" => "AMEX:XRT"
-    "Discount Stores" => "AMEX:XRT"
-    "Drugstore Chains" => "AMEX:XRT"
-    "Electric Utilities" => "AMEX:XLU"
-    "Electrical Products" => "AMEX:XLI"
-    "Electronic Components" => "AMEX:XLK"
-    "Electronic Equipment/Instruments" => "AMEX:XLK"
-    "Electronic Production Equipment" => "AMEX:XLK"
-    "Electronics Distributors" => "AMEX:XLK"
-    "Electronics/Appliance Stores" => "AMEX:XRT"
-    "Electronics/Appliances" => "AMEX:XLY"
-    "Engineering & Construction" => "AMEX:XLI"
-    "Environmental Services" => "AMEX:PBW"
-    "Finance/Rental/Leasing" => "AMEX:XLF"
-    "Financial Conglomerates" => "AMEX:XLF"
-    "Financial Publishing/Services" => "AMEX:XLF"
+    "Media Conglomerates" => "AMEX:XLC"
+    "Movies/Entertainment" => "AMEX:XLC"
+    "Publishing: Books/Magazines" => "AMEX:XLC"
+    "Publishing: Newspapers" => "AMEX:XLC"
+    
+    // Aerospace & Defense - ITA ($40.9B AUM)
+    "Aerospace & Defense" => "AMEX:ITA"
+    
+    // Agriculture & Food
+    "Agricultural Commodities/Milling" => "AMEX:MOO"    // VanEck Agribusiness ETF
     "Food Distributors" => "AMEX:XLP"
     "Food Retail" => "AMEX:XRT"
     "Food: Major Diversified" => "AMEX:XLP"
     "Food: Meat/Fish/Dairy" => "AMEX:XLP"
     "Food: Specialty/Candy" => "AMEX:XLP"
-    "Forest Products" => "NASDAQ:WOOD"
-    "Gas Distributors" => "AMEX:XLE"
-    "Home Furnishings" => "AMEX:XHB"
-    "Home Improvement Chains" => "AMEX:XHB"
-    "Homebuilding" => "AMEX:XHB"
-    "Hospital/Nursing Management" => "AMEX:XLV"
-    "Hotels/Resorts/Cruise Lines" => "AMEX:XLY"
+    
+    // Airlines - JETS ($914M AUM, most specific)
+    "Airlines" => "AMEX:JETS"
+    
+    // Automotive - CARZ ($5.9B AUM)
+    "Auto Parts: OEM" => "NASDAQ:CARZ"
+    "Automotive Aftermarket" => "NASDAQ:CARZ"
+    "Motor Vehicles" => "NASDAQ:CARZ"
+    "Retail: Automotive" => "NASDAQ:CARZ"
+    
+    // Banking & Finance
+    "Major Banks" => "AMEX:KBE"         // SPDR S&P Bank ETF ($2.8B AUM)
+    "Regional Banks" => "AMEX:KRE"      // SPDR S&P Regional Banking ETF ($4B AUM)
+    "Investment Banks/Brokers" => "AMEX:IAI"  // iShares U.S. Broker-Dealers ($1.8B AUM)
+    "Investment Managers" => "AMEX:XLF"
+    // "Investment Trusts/Mutual Funds" => "AMEX:XLF"
+    "Finance/Rental/Leasing" => "AMEX:XLF"
+    "Financial Conglomerates" => "AMEX:XLF"
+    "Financial Publishing/Services" => "AMEX:XLF"
+    
+    // Beverages
+    "Beverages: Alcoholic" => "AMEX:XLP"
+    "Beverages: Non-Alcoholic" => "AMEX:XLP"
+    
+    // Biotechnology - IBB ($8.8B AUM) or XBI ($8.7B AUM, equal-weighted)
+    "Biotechnology" => "NASDAQ:IBB"
+    
+    // Building & Construction - ITB ($2.9B AUM) or XHB ($1.8B AUM)
+    "Building Products" => "AMEX:ITB"
+    "Construction Materials" => "AMEX:ITB"
+    "Home Furnishings" => "AMEX:ITB"
+    "Home Improvement Chains" => "AMEX:ITB"
+    "Homebuilding" => "AMEX:ITB"
+    "Retail: Building Materials" => "AMEX:ITB"
+    "Retail: Home Improvement" => "AMEX:ITB"
+    
+    // Casinos/Gaming - BJK ($569M AUM)
+    "Casinos/Gaming" => "AMEX:BJK"
+    
+    // Chemicals - XLB ($12.7B AUM) for broad materials
+    "Chemicals: Agricultural" => "AMEX:XLB"
+    "Chemicals: Major Diversified" => "AMEX:XLB"
+    "Chemicals: Specialty" => "AMEX:XLB"
+    
+    // Clean Energy - ICLN ($4.6B AUM) or QCLN
+    "Alternative Power Generation" => "NASDAQ:ICLN"
+    "Environmental Services" => "NASDAQ:ICLN"
+    
+    // Consumer Discretionary
+    "Apparel/Footwear" => "AMEX:XRT"
+    "Apparel/Footwear Retail" => "AMEX:XRT"
+    "Consumer Sundries" => "AMEX:XLY"
+    "Electronics/Appliances" => "AMEX:XLY"
+    "Hotels/Resorts/Cruise Lines" => "AMEX:PEJ"  // Invesco Leisure & Entertainment
     "Household/Personal Care" => "AMEX:XLP"
+    "Recreational Products" => "AMEX:XLY"
+    
+    // Energy - XLE ($31.3B AUM) for broad, XOP ($2B AUM) for E&P
+    "Coal" => "AMEX:XLE"
+    "Contract Drilling" => "AMEX:OIH"       // VanEck Oil Services ETF ($2.3B AUM)
+    "Gas Distributors" => "AMEX:XLE"
+    "Integrated Oil" => "AMEX:XLE"
+    "Oil & Gas Production" => "AMEX:XOP"    // SPDR S&P Oil & Gas E&P ETF ($2B AUM)
+    "Oil & Gas Pipelines" => "AMEX:MLPA"    // Global X MLP ETF ($1.5B AUM)
+    "Oil Refining/Marketing" => "AMEX:XLE"
+    "Oil Equipment & Services" => "AMEX:OIH"
+    
+    // Financials - XLF ($55.7B AUM) for broad
+    "Insurance Brokers/Services" => "AMEX:KIE"  // SPDR S&P Insurance ETF ($1.3B AUM)
+    "Life/Health Insurance" => "AMEX:KIE"
+    "Multi-Line Insurance" => "AMEX:KIE"
+    
+    // Gold & Precious Metals - GDX ($52B AUM)
+    "Precious Metals" => "AMEX:GDX"         // VanEck Gold Miners ETF
+    
+    // Healthcare - XLV ($41.2B AUM) for broad
+    "Hospital/Nursing Management" => "AMEX:XLV"
+    "Managed Health Care" => "AMEX:XLV"
+    "Medical Distributors" => "AMEX:XLV"
+    "Medical Specialties" => "AMEX:IHI"     // iShares U.S. Medical Devices ($4.1B AUM)
+    "Medical/Nursing Services" => "AMEX:XLV"
+    
+    // Industrials - XLI ($49.6B AUM) for broad
+    "Air Freight/Couriers" => "AMEX:IYT"    // iShares Transportation Average ($1.2B AUM)
+    "Commercial Printing/Forms" => "AMEX:XLI"
+    "Containers/Packaging" => "AMEX:XLI"
+    "Electrical Products" => "AMEX:XLI"
+    "Engineering & Construction" => "AMEX:PAVE"  // Global X U.S. Infrastructure ($7.8B AUM)
     "Industrial Conglomerates" => "AMEX:XLI"
     "Industrial Machinery" => "AMEX:XLI"
     "Industrial Specialties" => "AMEX:XLI"
-    "Information Technology Services" => "AMEX:XLK"
-    "Insurance Brokers/Services" => "AMEX:XLF"
-    "Integrated Oil" => "AMEX:XLE"
-    "Internet Retail" => "AMEX:FDN"
-    "Internet Software/Services" => "AMEX:FDN"
-    "Investment Banks/Brokers" => "AMEX:XLF"
-    "Investment Managers" => "AMEX:XLF"
-    "Investment Trusts/Mutual Funds" => "AMEX:XLF"
-    "Life/Health Insurance" => "AMEX:XLF"
-    "Major Banks" => "AMEX:XLF"
-    "Major Telecommunications" => "AMEX:XLC"
-    "Managed Health Care" => "AMEX:XLV"
-    "Marine Shipping" => "AMEX:BOAT"
-    "Media Conglomerates" => "AMEX:XLC"
-    "Medical Distributors" => "AMEX:XLV"
-    "Medical Specialties" => "AMEX:XLV"
-    "Medical/Nursing Services" => "AMEX:XLV"
-    "Metal Fabrication" => "AMEX:XLB"
-    "Miscellaneous" => "AMEX:VTI"
     "Miscellaneous Commercial Services" => "AMEX:XLI"
     "Miscellaneous Manufacturing" => "AMEX:XLI"
-    "Motor Vehicles" => "NASDAQ:CARZ"
-    "Movies/Entertainment" => "AMEX:XLY"
-    "Multi-Line Insurance" => "AMEX:XLF"
-    "Office Equipment/Supplies" => "AMEX:XLK"
-    "Oil & Gas Production" => "AMEX:XOP"
-    "Oil & Gas Pipelines" => "AMEX:AMLP"
-    "Oil Refining/Marketing" => "AMEX:XLE"
-    "Packaged Software" => "AMEX:IGV"
-    "Paper/Forest Products" => "NASDAQ:WOOD"
-    "Pharmaceuticals: Major" => "AMEX:XPH"
-    "Pharmaceuticals: Other" => "AMEX:XPH"
-    "Precious Metals" => "AMEX:PPLT"
-    "Publishing: Books/Magazines" => "AMEX:XLC"
-    "Publishing: Newspapers" => "AMEX:XLC"
-    "Real Estate Development" => "AMEX:REM"
+    
+    // Internet - FDN ($19B AUM) for Internet
+    "Internet Retail" => "AMEX:IBUY"        // Amplify Online Retail ETF
+    "Internet Software/Services" => "AMEX:FDN"
+    
+    // Materials & Mining
+    "Aluminum" => "AMEX:XME"                // SPDR S&P Metals & Mining ($1.8B AUM)
+    "Metal Fabrication" => "AMEX:XME"
+    "Steel" => "AMEX:SLX"                   // VanEck Steel ETF ($182M AUM)
+    
+    // Pharmaceuticals - XPH or IBB
+    "Pharmaceuticals: Major" => "AMEX:XLV"  // Use broader healthcare for major pharma
+    "Pharmaceuticals: Other" => "AMEX:XPH"  // SPDR S&P Pharmaceuticals ($3B AUM)
+    
+    // Real Estate - VNQ ($76.6B AUM) for broad REITs
+    "Real Estate Development" => "AMEX:VNQ"
     "Real Estate Investment Trusts" => "AMEX:VNQ"
-    "Real Estate Management/Services" => "AMEX:REM"
-    "Recreational Products" => "AMEX:XLY"
-    "Restaurants" => "AMEX:EATZ"
+    "Real Estate Management/Services" => "AMEX:VNQ"
+    
+    // Restaurants
+    "Restaurants" => "AMEX:PBJ"             // Invesco Food & Beverage ETF
+    
+    // Retail - XRT ($1.8B AUM)
+    "Catalog/Specialty Distribution" => "AMEX:XRT"
+    "Department Stores" => "AMEX:XRT"
+    "Discount Stores" => "AMEX:XRT"
+    "Drugstore Chains" => "AMEX:XRT"
+    "Electronics/Appliance Stores" => "AMEX:XRT"
     "Retail: Apparel/Footwear" => "AMEX:XRT"
-    "Retail: Automotive" => "NASDAQ:CARZ"
-    "Retail: Building Materials" => "AMEX:XHB"
     "Retail: Computer/Electronics" => "AMEX:XRT"
     "Retail: Discount" => "AMEX:XRT"
     "Retail: Drugstore" => "AMEX:XRT"
     "Retail: General" => "AMEX:XRT"
     "Retail: Grocery" => "AMEX:XRT"
-    "Retail: Home Improvement" => "AMEX:XHB"
     "Retail: Specialty" => "AMEX:XRT"
     "Specialty Stores" => "AMEX:XRT"
-    "Semiconductors" => "NASDAQ:SOXX"
+    
+    // Semiconductors - SMH ($43.9B AUM, largest) or SOXX ($27B AUM)
+    "Semiconductors" => "NASDAQ:SMH"        // VanEck Semiconductor ETF
+    "Electronic Production Equipment" => "NASDAQ:SMH"
+    
+    // Software - IGV ($7.1B AUM)
+    "Packaged Software" => "AMEX:IGV"       // iShares Expanded Tech-Software
+    
+    // Technology - XLK ($94.9B AUM) or VGT ($115.8B AUM)
+    "Computer Communications" => "AMEX:XLK"
+    "Computer Peripherals" => "AMEX:XLK"
+    "Computer Processing Hardware" => "AMEX:XLK"
+    "Data Processing Services" => "AMEX:XLK"
+    "Electronic Components" => "AMEX:XLK"
+    "Electronic Equipment/Instruments" => "AMEX:XLK"
+    "Electronics Distributors" => "AMEX:XLK"
+    "Information Technology Services" => "AMEX:XLK"
+    "Office Equipment/Supplies" => "AMEX:XLK"
+    
+    // Telecommunications - XLC ($36.5B AUM)
+    "Major Telecommunications" => "AMEX:XLC"
     "Specialty Telecommunications" => "AMEX:XLC"
-    "Steel" => "AMEX:SLX"
+    "Wireless Telecommunications" => "AMEX:XLC"
+    
+    // Textiles
     "Textiles" => "AMEX:XRT"
+    
+    // Timber & Forest Products - WOOD ($308M AUM)
+    "Forest Products" => "NASDAQ:WOOD"
+    "Paper/Forest Products" => "NASDAQ:WOOD"
+    
+    // Tobacco
     "Tobacco" => "AMEX:XLP"
+    
+    // Transportation - IYT ($1.2B AUM)
+    "Marine Shipping" => "AMEX:BOAT"        // SonicShares Global Shipping ETF
     "Transportation Infrastructure" => "AMEX:IYT"
     "Trucking" => "AMEX:IYT"
+    
+    // Uranium & Nuclear - URA ($9.7B AUM combined)
+    "Uranium" => "AMEX:URA"                 // Global X Uranium ETF
+    
+    // Utilities - XLU ($37.9B AUM)
+    "Electric Utilities" => "AMEX:XLU"
     "Utilities: Electric" => "AMEX:XLU"
-    "Utilities: Gas" => "AMEX:UGA"
-    "Utilities: Water" => "AMEX:XLU"
-    "Wireless Telecommunications" => "AMEX:XLC"
+    "Utilities: Gas" => "AMEX:XLU"
+    "Utilities: Water" => "AMEX:PHO"        // Invesco Water Resources ($2.1B AUM)
+    
+    // Miscellaneous
+    "Miscellaneous" => "AMEX:VTI"
     => na
     
 // 4. Fetch Data
