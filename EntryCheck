@@ -514,7 +514,7 @@ if barstate.islast
 
     // 4. Group Strength
     // Only show Sector RS if not SPY
-    if sectorETF != "SPY"
+    if sectorETF != "AMEX:SPY"
         set_row(currentRow, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
         currentRow := currentRow + 1
     
@@ -528,7 +528,7 @@ if barstate.islast
     currentRow := currentRow + 1
     
     // Only show RS vs Sector if not SPY (avoid duplicate of RS vs SPX)
-    if sectorETF != "SPY"
+    if sectorETF != "AMEX:SPY"
         set_row(currentRow, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
         currentRow := currentRow + 1
     
