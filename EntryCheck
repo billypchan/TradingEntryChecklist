@@ -151,6 +151,13 @@ isRSStrong = rsRating >= 80
 
 // --- E. Growth Metrics ---
 // Only fetch financial data for stocks
+
+// Calculate dynamic lookback periods based on timeframe
+// 1 year: Daily=252, Weekly=52, Monthly=12
+// 1 quarter: Daily=63, Weekly=13, Monthly=3
+barsPerYear = timeframe.ismonthly ? 12 : timeframe.isweekly ? 52 : 252
+barsPerQuarter = timeframe.ismonthly ? 3 : timeframe.isweekly ? 13 : 63
+
 var float salesTTM = na
 var float epsTTM = na
 var float salesTTM_1Y = na
@@ -159,8 +166,8 @@ var float epsTTM_1Y = na
 if hasFinancialData
     salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
     epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
-    salesTTM_1Y := salesTTM[252]
-    epsTTM_1Y := epsTTM[252]
+    salesTTM_1Y := salesTTM[barsPerYear]
+    epsTTM_1Y := epsTTM[barsPerYear]
 
 calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
 salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
@@ -175,8 +182,8 @@ var float salesTTM_Q1 = na
 var float epsTTM_Q1 = na
 
 if hasFinancialData and not na(salesTTM) and not na(epsTTM)
-    salesTTM_Q1 := salesTTM[63] // Reuse fetched data
-    epsTTM_Q1 := epsTTM[63]
+    salesTTM_Q1 := salesTTM[barsPerQuarter] // Reuse fetched data
+    epsTTM_Q1 := epsTTM[barsPerQuarter]
 
 // Calculate previous quarter's year-over-year growth rate
 prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
