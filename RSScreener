@@ -1,0 +1,218 @@
+//@version=5
+indicator("RS Screener", shorttitle = "RSScreener", overlay = true)
+
+// RS Screener - Lightweight indicator for TradingView Stock Screener
+// Only calculates RS ratings with minimal data requests
+
+// ==========================================
+// 1. SECTOR & INDUSTRY ETF MAPPING
+// ==========================================
+
+sectorETF = switch syminfo.sector
+    "Technology Services"     => "AMEX:XLK"
+    "Electronic Technology"   => "NASDAQ:SOXX"
+    "Finance"                 => "AMEX:XLF"
+    "Health Technology"       => "NASDAQ:IBB"
+    "Retail Trade"            => "AMEX:XRT"
+    "Consumer Non-Durables"   => "AMEX:XLP"
+    "Producer Manufacturing"  => "AMEX:XLI"
+    "Energy Minerals"         => "AMEX:XLE"
+    "Consumer Durables"       => "AMEX:XLY"
+    "Consumer Services"       => "AMEX:XLY"
+    "Utilities"               => "AMEX:XLU"
+    "Non-Energy Minerals"     => "AMEX:XLB"
+    "Industrial Services"     => "AMEX:XLI"
+    "Transportation"          => "AMEX:IYT"
+    "Commercial Services"     => "AMEX:XLI"
+    "Communications"          => "AMEX:XLC"
+    "Process Industries"      => "AMEX:XLB"
+    "Health Services"         => "AMEX:XLV"
+    "Distribution Services"   => "AMEX:XLY"
+    "Miscellaneous"           => "AMEX:VTI"
+    => "AMEX:SPY"
+
+industryETF = switch syminfo.industry
+    "Advertising/Marketing Services" => "AMEX:XLC"
+    "Broadcasting" => "AMEX:XLC"
+    "Cable/Satellite TV" => "AMEX:XLC"
+    "Media Conglomerates" => "AMEX:XLC"
+    "Movies/Entertainment" => "AMEX:XLC"
+    "Publishing: Books/Magazines" => "AMEX:XLC"
+    "Publishing: Newspapers" => "AMEX:XLC"
+    "Aerospace & Defense" => "AMEX:ITA"
+    "Agricultural Commodities/Milling" => "AMEX:MOO"
+    "Food Distributors" => "AMEX:XLP"
+    "Food Retail" => "AMEX:XRT"
+    "Food: Major Diversified" => "AMEX:XLP"
+    "Food: Meat/Fish/Dairy" => "AMEX:XLP"
+    "Food: Specialty/Candy" => "AMEX:XLP"
+    "Airlines" => "AMEX:JETS"
+    "Auto Parts: OEM" => "NASDAQ:CARZ"
+    "Automotive Aftermarket" => "NASDAQ:CARZ"
+    "Motor Vehicles" => "NASDAQ:CARZ"
+    "Retail: Automotive" => "NASDAQ:CARZ"
+    "Major Banks" => "AMEX:KBE"
+    "Regional Banks" => "AMEX:KRE"
+    "Investment Banks/Brokers" => "AMEX:IAI"
+    "Investment Managers" => "AMEX:XLF"
+    "Finance/Rental/Leasing" => "AMEX:XLF"
+    "Financial Conglomerates" => "AMEX:XLF"
+    "Financial Publishing/Services" => "AMEX:XLF"
+    "Beverages: Alcoholic" => "AMEX:XLP"
+    "Beverages: Non-Alcoholic" => "AMEX:XLP"
+    "Biotechnology" => "NASDAQ:IBB"
+    "Building Products" => "AMEX:ITB"
+    "Construction Materials" => "AMEX:ITB"
+    "Home Furnishings" => "AMEX:ITB"
+    "Home Improvement Chains" => "AMEX:ITB"
+    "Homebuilding" => "AMEX:ITB"
+    "Retail: Building Materials" => "AMEX:ITB"
+    "Retail: Home Improvement" => "AMEX:ITB"
+    "Casinos/Gaming" => "AMEX:BJK"
+    "Chemicals: Agricultural" => "AMEX:XLB"
+    "Chemicals: Major Diversified" => "AMEX:XLB"
+    "Chemicals: Specialty" => "AMEX:XLB"
+    "Alternative Power Generation" => "NASDAQ:ICLN"
+    "Environmental Services" => "NASDAQ:ICLN"
+    "Apparel/Footwear" => "AMEX:XRT"
+    "Apparel/Footwear Retail" => "AMEX:XRT"
+    "Consumer Sundries" => "AMEX:XLY"
+    "Electronics/Appliances" => "AMEX:XLY"
+    "Hotels/Resorts/Cruise Lines" => "AMEX:PEJ"
+    "Household/Personal Care" => "AMEX:XLP"
+    "Recreational Products" => "AMEX:XLY"
+    "Coal" => "AMEX:XLE"
+    "Contract Drilling" => "AMEX:OIH"
+    "Gas Distributors" => "AMEX:XLE"
+    "Integrated Oil" => "AMEX:XLE"
+    "Oil & Gas Production" => "AMEX:XOP"
+    "Oil & Gas Pipelines" => "AMEX:MLPA"
+    "Oil Refining/Marketing" => "AMEX:XLE"
+    "Oil Equipment & Services" => "AMEX:OIH"
+    "Insurance Brokers/Services" => "AMEX:KIE"
+    "Life/Health Insurance" => "AMEX:KIE"
+    "Multi-Line Insurance" => "AMEX:KIE"
+    "Precious Metals" => "AMEX:GDX"
+    "Hospital/Nursing Management" => "AMEX:XLV"
+    "Managed Health Care" => "AMEX:XLV"
+    "Medical Distributors" => "AMEX:XLV"
+    "Medical Specialties" => "AMEX:IHI"
+    "Medical/Nursing Services" => "AMEX:XLV"
+    "Air Freight/Couriers" => "AMEX:IYT"
+    "Commercial Printing/Forms" => "AMEX:XLI"
+    "Containers/Packaging" => "AMEX:XLI"
+    "Electrical Products" => "AMEX:XLI"
+    "Engineering & Construction" => "AMEX:PAVE"
+    "Industrial Conglomerates" => "AMEX:XLI"
+    "Industrial Machinery" => "AMEX:XLI"
+    "Industrial Specialties" => "AMEX:XLI"
+    "Miscellaneous Commercial Services" => "AMEX:XLI"
+    "Miscellaneous Manufacturing" => "AMEX:XLI"
+    "Internet Retail" => "AMEX:IBUY"
+    "Internet Software/Services" => "AMEX:FDN"
+    "Aluminum" => "AMEX:XME"
+    "Metal Fabrication" => "AMEX:XME"
+    "Steel" => "AMEX:SLX"
+    "Pharmaceuticals: Major" => "AMEX:XLV"
+    "Pharmaceuticals: Other" => "AMEX:XPH"
+    "Real Estate Development" => "AMEX:VNQ"
+    "Real Estate Investment Trusts" => "AMEX:VNQ"
+    "Real Estate Management/Services" => "AMEX:VNQ"
+    "Restaurants" => "AMEX:PBJ"
+    "Catalog/Specialty Distribution" => "AMEX:XRT"
+    "Department Stores" => "AMEX:XRT"
+    "Discount Stores" => "AMEX:XRT"
+    "Drugstore Chains" => "AMEX:XRT"
+    "Electronics/Appliance Stores" => "AMEX:XRT"
+    "Retail: Apparel/Footwear" => "AMEX:XRT"
+    "Retail: Computer/Electronics" => "AMEX:XRT"
+    "Retail: Discount" => "AMEX:XRT"
+    "Retail: Drugstore" => "AMEX:XRT"
+    "Retail: General" => "AMEX:XRT"
+    "Retail: Grocery" => "AMEX:XRT"
+    "Retail: Specialty" => "AMEX:XRT"
+    "Specialty Stores" => "AMEX:XRT"
+    "Semiconductors" => "NASDAQ:SMH"
+    "Electronic Production Equipment" => "NASDAQ:SMH"
+    "Packaged Software" => "AMEX:IGV"
+    "Computer Communications" => "AMEX:XLK"
+    "Computer Peripherals" => "AMEX:XLK"
+    "Computer Processing Hardware" => "AMEX:XLK"
+    "Data Processing Services" => "AMEX:XLK"
+    "Electronic Components" => "AMEX:XLK"
+    "Electronic Equipment/Instruments" => "AMEX:XLK"
+    "Electronics Distributors" => "AMEX:XLK"
+    "Information Technology Services" => "AMEX:XLK"
+    "Office Equipment/Supplies" => "AMEX:XLK"
+    "Major Telecommunications" => "AMEX:XLC"
+    "Specialty Telecommunications" => "AMEX:XLC"
+    "Wireless Telecommunications" => "AMEX:XLC"
+    "Textiles" => "AMEX:XRT"
+    "Forest Products" => "NASDAQ:WOOD"
+    "Paper/Forest Products" => "NASDAQ:WOOD"
+    "Tobacco" => "AMEX:XLP"
+    "Marine Shipping" => "AMEX:BOAT"
+    "Transportation Infrastructure" => "AMEX:IYT"
+    "Trucking" => "AMEX:IYT"
+    "Uranium" => "AMEX:URA"
+    "Electric Utilities" => "AMEX:XLU"
+    "Utilities: Electric" => "AMEX:XLU"
+    "Utilities: Gas" => "AMEX:XLU"
+    "Utilities: Water" => "AMEX:PHO"
+    "Miscellaneous" => "AMEX:VTI"
+    => na
+
+// ==========================================
+// 2. DATA FETCHING (Optimized - Single Request)
+// ==========================================
+
+// Fetch all prices in one request call
+[stockClose, spxClose, sectorClose, industryClose] = request.security(syminfo.tickerid, "D", [close, request.security("SP:SPX", "D", close), request.security(sectorETF, "D", close), request.security(industryETF, "D", close)])
+
+// ==========================================
+// 3. RS CALCULATIONS
+// ==========================================
+
+calc_roc(src, len) =>
+    safe_len = math.min(bar_index, len)
+    src / src[safe_len]
+
+// IBD-style weighted performance (40% 3M, 20% 6M, 20% 9M, 20% 12M)
+perfStock   = 0.4 * calc_roc(stockClose, 63) + 0.2 * calc_roc(stockClose, 126) + 0.2 * calc_roc(stockClose, 189) + 0.2 * calc_roc(stockClose, 252)
+perfSPX     = 0.4 * calc_roc(spxClose, 63)   + 0.2 * calc_roc(spxClose, 126)   + 0.2 * calc_roc(spxClose, 189)   + 0.2 * calc_roc(spxClose, 252)
+perfSector  = 0.4 * calc_roc(sectorClose, 63) + 0.2 * calc_roc(sectorClose, 126) + 0.2 * calc_roc(sectorClose, 189) + 0.2 * calc_roc(sectorClose, 252)
+perfIndustry = 0.4 * calc_roc(industryClose, 63) + 0.2 * calc_roc(industryClose, 126) + 0.2 * calc_roc(industryClose, 189) + 0.2 * calc_roc(industryClose, 252)
+
+// RS Scores
+rsScore = perfSPX != 0 ? perfStock / perfSPX * 100 : 0
+rsSectorScore = perfSector != 0 ? perfStock / perfSector * 100 : 0
+rsIndustryScore = perfIndustry != 0 ? perfStock / perfIndustry * 100 : 0
+
+// Convert to 1-99 rating scale
+toRating(score) =>
+    score >= 120 ? 99 : score >= 110 ? 90 : score >= 100 ? 80 : score >= 95 ? 70 : score >= 90 ? 60 : score >= 85 ? 50 : score >= 75 ? 40 : score >= 65 ? 30 : score >= 55 ? 20 : score >= 45 ? 10 : 1
+
+rsRating = toRating(rsScore)
+rsSectorRating = toRating(rsSectorScore)
+rsIndustryRating = toRating(rsIndustryScore)
+
+// Boolean flags
+isRSStrong = rsRating >= 80
+isRSWeak = rsRating < 65
+isSectorRSStrong = rsSectorRating >= 80
+isIndustryRSStrong = rsIndustryRating >= 80
+
+// ==========================================
+// 4. SCREENER OUTPUTS
+// ==========================================
+
+// RS Ratings (1-99 scale)
+plot(rsRating, "RS(SPX)", display=display.none)
+plot(rsSectorRating, "RS(Sector)", display=display.none)
+plot(rsIndustryRating, "RS(Industry)", display=display.none)
+
+// Boolean flags (1=true, 0=false)
+plot(isRSStrong ? 1 : 0, "isRSStrong", display=display.none)
+plot(isRSWeak ? 1 : 0, "isRSWeak", display=display.none)
+plot(isSectorRSStrong ? 1 : 0, "isSectorRSStrong", display=display.none)
+plot(isIndustryRSStrong ? 1 : 0, "isIndustryRSStrong", display=display.none)
