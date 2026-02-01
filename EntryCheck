@@ -71,11 +71,11 @@ c_text = color.white
 s5th = request.security("INDEX:S5TH", "D", close)
 isBreadthOversold = s5th < 20
 isBreadthOverbought = s5th > 80
-s5thStr = str.tostring(s5th, "#.##") + "%"
+s5thStr = str.tostring(s5th, "#") + "%"
 
 // --- A2. Greed/Fear Index (VIX) ---
 vix = request.security("CBOE:VIX", "D", close)
-vixStr = na(vix) ? "N/A" : str.tostring(vix, "#.##")
+vixStr = na(vix) ? "N/A" : str.tostring(vix, "#")
 isGreed = vix <= 15
 isFear = vix >= 25
 
@@ -92,7 +92,7 @@ earningsTime = earnings.future_time
 hasFinancialData = not na(earningsTime)
 daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 : na
 isEarningsSoon = not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
-earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,yyyy-MM-dd}", earningsTime)
+earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,MMMdd}", earningsTime)
 
 // --- C. Seasonality ---
 currentMonth = month(timenow)
@@ -130,9 +130,7 @@ monthName = switch currentMonth
     12 => "Dec"
     => "N/A"
 
-seasonalityLabel = isWeakMonth ? "W" : isStrongMonth ? "S" : "N"
-monthStr = str.format("{0} ({1}%)", monthName, str.tostring(monthlyReturns, "#.##"))
-seasonalStr = str.format("{0} ({1})", monthStr, seasonalityLabel)
+seasonalStr = str.format("{0}({1})", monthName, str.tostring(monthlyReturns, "#.##"))
 
 // --- D. RS Rating vs SPX (IBD Style) ---
 [spxClose, stockClose] = request.security(syminfo.tickerid, "D", [request.security("SP:SPX", "D", close), close])
@@ -198,7 +196,7 @@ isBothAccelerating = hasFinancialData and isSalesAccelerating and isEpsAccelerat
 salesAcceleration = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
 epsAcceleration = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
 
-accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#.#") + "% E:" + str.tostring(epsAcceleration, "#.#") + "%"
+accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#") + "% E:" + str.tostring(epsAcceleration, "#") + "%"
 
 // --- G. Enhanced Sector & Industry Logic ---
 // 2. Sector ETF Mapping (AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs)
@@ -460,8 +458,13 @@ isIndustryRSStrong = rsIndustryRating >= 80
 // Get asset type display name
 assetTypeStr = isCrypto ? "Crypto" : isCommodity ? "Commodity" : isForex ? "Forex" : isIndex ? "Index" : isFund ? "Fund" : "Stock"
 
-secStr = str.format("{0} ({1})", syminfo.sector, sectorETF)
-indStr = str.format("{0} ({1})", hasFinancialData ? syminfo.industry : assetTypeStr, industryETF)
+// Helper to extract ticker from "EXCHANGE:TICKER" format
+getTicker(etf) => 
+    colonPos = str.pos(etf, ":")
+    colonPos >= 0 ? str.substring(etf, colonPos + 1) : etf
+
+secTicker = getTicker(sectorETF)
+indTicker = na(industryETF) ? "" : getTicker(industryETF)
 
 // ==========================================
 // 3. VISUALIZATION
@@ -510,9 +513,9 @@ if barstate.islast
             currentRow := currentRow + 1
     
     // 3. Market Context
-    set_row(currentRow, "Market (S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
+    set_row(currentRow, "Mkt(S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
     currentRow := currentRow + 1
-    set_row(currentRow, "VIX (Fear/Greed)", vixStr, isGreed, isFear)
+    set_row(currentRow, "VIX", vixStr, isGreed, isFear)
     currentRow := currentRow + 1
     
     // Add separator after market context
@@ -522,23 +525,23 @@ if barstate.islast
     // 4. Group Strength
     // Only show Sector RS if not SPY
     if sectorETF != "AMEX:SPY"
-        set_row(currentRow, "Sector RS (" + sectorETF + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+        set_row(currentRow, "Sec(" + secTicker + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
         currentRow := currentRow + 1
     
     // Only show Industry RS if valid ETF found and different from Sector ETF
     if not na(industryETF) and sectorETF != industryETF
-        set_row(currentRow, "Industry RS (" + industryETF + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+        set_row(currentRow, "Ind(" + indTicker + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
         currentRow := currentRow + 1
     
     // 5. Technicals
-    set_row(currentRow, "RS vs SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
+    set_row(currentRow, "RS(SPX)", str.tostring(rsRating), isRSStrong, isRSWeak)
     currentRow := currentRow + 1
     
     // Only show RS vs Sector if not SPY (avoid duplicate of RS vs SPX)
     if sectorETF != "AMEX:SPY"
-        set_row(currentRow, "RS vs Sector", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
+        set_row(currentRow, "RS(" + secTicker + ")", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
         currentRow := currentRow + 1
     
     // Show Industry RS Rating only if valid ETF found and different ETF
     if not na(industryETF) and sectorETF != industryETF
-        set_row(currentRow, "RS vs Industry", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+        set_row(currentRow, "RS(" + indTicker + ")", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
