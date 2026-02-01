@@ -545,3 +545,41 @@ if barstate.islast
     // Show Industry RS Rating only if valid ETF found and different ETF
     if not na(industryETF) and sectorETF != industryETF
         set_row(currentRow, "RS(" + indTicker + ")", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+
+// ==========================================
+// 4. SCREENER OUTPUTS
+// ==========================================
+// Plot values for use in TradingView Stock Screener
+// These can be used as filter criteria when running a scan
+
+// RS Ratings (1-99 scale)
+plot(rsRating, "RS(SPX)", display=display.none)
+plot(rsSectorRating, "RS(Sector)", display=display.none)
+plot(rsIndustryRating, "RS(Industry)", display=display.none)
+
+// RS Strong/Weak flags (1=true, 0=false)
+plot(isRSStrong ? 1 : 0, "isRSStrong", display=display.none)
+plot(isRSWeak ? 1 : 0, "isRSWeak", display=display.none)
+plot(isSectorRSStrong ? 1 : 0, "isSectorRSStrong", display=display.none)
+plot(isIndustryRSStrong ? 1 : 0, "isIndustryRSStrong", display=display.none)
+
+// Sector/Industry relative performance (20D vs SPY)
+plot(secRS * 100, "SecRS%", display=display.none)
+plot(indRS * 100, "IndRS%", display=display.none)
+
+// Fundamental filters
+plot(isGrowthStrong ? 1 : 0, "isGrowthStrong", display=display.none)
+plot(isBothAccelerating ? 1 : 0, "isAccelerating", display=display.none)
+plot(salesGrowth * 100, "SalesGrowth%", display=display.none)
+plot(epsGrowth * 100, "EPSGrowth%", display=display.none)
+
+# // Market context
+# plot(s5th, "S5TH", display=display.none)
+# plot(vix, "VIX", display=display.none)
+# plot(isBreadthOversold ? 1 : 0, "isBreadthOversold", display=display.none)
+# plot(isFear ? 1 : 0, "isFear", display=display.none)
+
+# // Earnings
+# plot(isEarningsSoon ? 1 : 0, "isEarningsSoon", display=display.none)
+# plot(nz(daysUntilEarnings, -1), "DaysToEarnings", display=display.none)
+
