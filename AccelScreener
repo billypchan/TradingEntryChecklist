@@ -1,0 +1,93 @@
+//@version=5
+indicator("Acceleration Screener", shorttitle = "AccelScreener", overlay = true, dynamic_requests = true)
+
+// Acceleration Screener - Lightweight indicator for TradingView Stock Screener
+// Screens for stocks with accelerating sales and EPS growth
+
+// ==========================================
+// 1. FINANCIAL DATA FETCHING
+// ==========================================
+
+// Check if asset has financial data
+earningsTime = earnings.future_time
+hasFinancialData = not na(earningsTime)
+
+// Dynamic lookback periods based on timeframe
+// 1 year: Daily=252, Weekly=52, Monthly=12
+// 1 quarter: Daily=63, Weekly=13, Monthly=3
+barsPerYear = timeframe.ismonthly ? 12 : timeframe.isweekly ? 52 : 252
+barsPerQuarter = timeframe.ismonthly ? 3 : timeframe.isweekly ? 13 : 63
+
+// Fetch financial data only if available
+var float salesTTM = na
+var float epsTTM = na
+var float salesTTM_1Y = na
+var float epsTTM_1Y = na
+var float salesTTM_Q1 = na
+var float epsTTM_Q1 = na
+
+if hasFinancialData
+    salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
+    epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
+    salesTTM_1Y := salesTTM[barsPerYear]
+    epsTTM_1Y := epsTTM[barsPerYear]
+    salesTTM_Q1 := salesTTM[barsPerQuarter]
+    epsTTM_Q1 := epsTTM[barsPerQuarter]
+
+// ==========================================
+// 2. GROWTH CALCULATIONS
+// ==========================================
+
+calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
+
+// Current YoY growth
+salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
+epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
+
+// Previous quarter's YoY growth (for acceleration comparison)
+prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth = hasFinancialData and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
+
+// ==========================================
+// 3. ACCELERATION FLAGS
+// ==========================================
+
+// Acceleration = current growth > previous quarter growth
+isSalesAccelerating = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
+isBothAccelerating = isSalesAccelerating and isEpsAccelerating
+
+// Acceleration rate (current growth - previous growth)
+salesAcceleration = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
+epsAcceleration = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
+
+// Growth strength flags
+isGrowthStrong = hasFinancialData and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
+isGrowthPositive = hasFinancialData and nz(salesGrowth) > 0 and nz(epsGrowth) > 0
+
+// Combined flags
+isAccelWithGrowth = isBothAccelerating and isGrowthStrong
+
+// ==========================================
+// 4. SCREENER OUTPUTS
+// ==========================================
+
+// Acceleration flags (1=true, 0=false)
+plot(isSalesAccelerating ? 1 : 0, "isSalesAccel", display=display.none)
+plot(isEpsAccelerating ? 1 : 0, "isEpsAccel", display=display.none)
+plot(isBothAccelerating ? 1 : 0, "isBothAccel", display=display.none)
+
+// Growth flags
+plot(isGrowthStrong ? 1 : 0, "isGrowthStrong", display=display.none)
+plot(isGrowthPositive ? 1 : 0, "isGrowthPositive", display=display.none)
+
+// Combined flag - accelerating with strong growth
+plot(isAccelWithGrowth ? 1 : 0, "isAccelWithGrowth", display=display.none)
+
+// Raw growth percentages
+plot(salesGrowth * 100, "SalesGrowth%", display=display.none)
+plot(epsGrowth * 100, "EPSGrowth%", display=display.none)
+
+// Acceleration rates
+plot(salesAcceleration, "SalesAccel%", display=display.none)
+plot(epsAcceleration, "EPSAccel%", display=display.none)

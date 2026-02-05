@@ -1,5 +1,5 @@
 //@version=5
-indicator("RS Screener", shorttitle = "RSScreener", overlay = true)
+indicator("RS Screener", shorttitle = "RSScreener", overlay = true, dynamic_requests = true)
 
 // RS Screener - Lightweight indicator for TradingView Stock Screener
 // Only calculates RS ratings with minimal data requests
@@ -202,17 +202,78 @@ isRSWeak = rsRating < 65
 isSectorRSStrong = rsSectorRating >= 80
 isIndustryRSStrong = rsIndustryRating >= 80
 
+// Sector/Industry 20D relative performance vs SPX
+calc_rel(asset, bench) =>
+    val = asset / asset[20] - 1
+    b_val = bench / bench[20] - 1
+    val - b_val
+
+secRS = calc_rel(sectorClose, spxClose)
+indRS = calc_rel(industryClose, spxClose)
+isSecRSStrong = secRS > 0.02
+isIndRSStrong = indRS > 0.02
+
+// ==========================================
+// 4. FUNDAMENTAL GROWTH METRICS
+// ==========================================
+
+// Check if asset has financial data
+earningsTime = earnings.future_time
+hasFinancialData = not na(earningsTime)
+
+// Dynamic lookback periods based on timeframe
+barsPerYear = timeframe.ismonthly ? 12 : timeframe.isweekly ? 52 : 252
+barsPerQuarter = timeframe.ismonthly ? 3 : timeframe.isweekly ? 13 : 63
+
+// Fetch financial data only if available
+var float salesTTM = na
+var float epsTTM = na
+var float salesTTM_1Y = na
+var float epsTTM_1Y = na
+var float salesTTM_Q1 = na
+var float epsTTM_Q1 = na
+
+if hasFinancialData
+    salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
+    epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
+    salesTTM_1Y := salesTTM[barsPerYear]
+    epsTTM_1Y := epsTTM[barsPerYear]
+    salesTTM_Q1 := salesTTM[barsPerQuarter]
+    epsTTM_Q1 := epsTTM[barsPerQuarter]
+
+// Growth calculations
+calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
+salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
+epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
+
+// Previous quarter growth for acceleration
+prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
+prevEpsGrowth = hasFinancialData and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
+
+// Fundamental flags
+isGrowthStrong = hasFinancialData and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
+isSalesAccelerating = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
+isEpsAccelerating = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
+isBothAccelerating = isSalesAccelerating and isEpsAccelerating
+
+// Combined "all true" flag: RS strong + Growth strong + Accelerating
+isAllStrong = isRSStrong and isGrowthStrong and isBothAccelerating
+
 // ==========================================
 // 4. SCREENER OUTPUTS
 // ==========================================
 
-// RS Ratings (1-99 scale)
-plot(rsRating, "RS(SPX)", display=display.none)
-plot(rsSectorRating, "RS(Sector)", display=display.none)
-plot(rsIndustryRating, "RS(Industry)", display=display.none)
 
 // Boolean flags (1=true, 0=false)
 plot(isRSStrong ? 1 : 0, "isRSStrong", display=display.none)
-plot(isRSWeak ? 1 : 0, "isRSWeak", display=display.none)
 plot(isSectorRSStrong ? 1 : 0, "isSectorRSStrong", display=display.none)
 plot(isIndustryRSStrong ? 1 : 0, "isIndustryRSStrong", display=display.none)
+plot(isSecRSStrong ? 1 : 0, "isSecRSStrong", display=display.none)
+plot(isIndRSStrong ? 1 : 0, "isIndRSStrong", display=display.none)
+
+// Fundamental flags (1=true, 0=false)
+plot(isGrowthStrong ? 1 : 0, "isGrowthStrong", display=display.none)
+plot(isBothAccelerating ? 1 : 0, "isAccelerating", display=display.none)
+
+// Combined flag - all criteria met
+plot(isAllStrong ? 1 : 0, "isAllStrong", display=display.none)
