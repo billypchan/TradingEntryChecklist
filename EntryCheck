@@ -199,28 +199,51 @@ epsAcceleration = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowt
 accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#") + "% E:" + str.tostring(epsAcceleration, "#") + "%"
 
 // --- G. Enhanced Sector & Industry Logic ---
-// 2. Sector ETF Mapping (AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs)
+// 2. Sector ETF Mapping 
+// Using largest AUM ETFs from etfdb.com/etfs/sector/ for best liquidity
+// Format: AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs
 sectorETF = switch syminfo.sector
-    "Technology Services"     => "AMEX:XLK"
-    "Electronic Technology"   => "NASDAQ:SOXX"
-    "Finance"                 => "AMEX:XLF"
-    "Health Technology"       => "NASDAQ:IBB"
-    "Retail Trade"            => "AMEX:XRT"
-    "Consumer Non-Durables"   => "AMEX:XLP"
-    "Producer Manufacturing"  => "AMEX:XLI"
-    "Energy Minerals"         => "AMEX:XLE"
-    "Consumer Durables"       => "AMEX:XLY"
-    "Consumer Services"       => "AMEX:XLY"
-    "Utilities"               => "AMEX:XLU"
-    "Non-Energy Minerals"     => "AMEX:XLB"
-    "Industrial Services"     => "AMEX:XLI"
-    "Transportation"          => "AMEX:IYT"
-    "Commercial Services"     => "AMEX:XLI"
-    "Communications"          => "AMEX:XLC"
-    "Process Industries"      => "AMEX:XLB"
-    "Health Services"         => "AMEX:XLV"
-    "Distribution Services"   => "AMEX:XLY"
-    "Miscellaneous"           => "AMEX:VTI"
+    // Technology - XLK ($92B) or VGT ($113B)
+    "Technology Services"     => "AMEX:XLK"     // S&P 500 IT Sector ($92B AUM)
+    "Electronic Technology"   => "NASDAQ:SMH"   // Semiconductors ($44.6B AUM) - larger than SOXX
+    
+    // Financials - XLF ($55B)
+    "Finance"                 => "AMEX:XLF"     // Financial Select Sector ($55B AUM)
+    
+    // Healthcare - XLV ($41B) or IBB ($8.5B for biotech)
+    "Health Technology"       => "AMEX:XLV"     // Health Care Select Sector ($41B AUM)
+    "Health Services"         => "AMEX:XLV"     // Health Care Select Sector ($41B AUM)
+    
+    // Consumer - XLY ($33B) for discretionary, XLP ($28B) for staples
+    "Retail Trade"            => "AMEX:XRT"     // S&P Retail ($1.8B AUM) - more specific
+    "Consumer Non-Durables"   => "AMEX:XLP"     // Consumer Staples ($28B AUM)
+    "Consumer Durables"       => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
+    "Consumer Services"       => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
+    "Distribution Services"   => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
+    
+    // Industrials - XLI ($49B)
+    "Producer Manufacturing"  => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
+    "Industrial Services"     => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
+    "Commercial Services"     => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
+    
+    // Energy - XLE ($32.5B)
+    "Energy Minerals"         => "AMEX:XLE"     // Energy Select Sector ($32.5B AUM)
+    
+    // Utilities - XLU ($37B)
+    "Utilities"               => "AMEX:XLU"     // Utilities Select Sector ($37B AUM)
+    
+    // Materials - XLB ($12.7B)
+    "Non-Energy Minerals"     => "AMEX:XLB"     // Materials Select Sector ($12.7B AUM)
+    "Process Industries"      => "AMEX:XLB"     // Materials Select Sector ($12.7B AUM)
+    
+    // Transportation - IYT ($1.2B)
+    "Transportation"          => "AMEX:IYT"     // Transportation Average ($1.2B AUM)
+    
+    // Communications - XLC ($36.5B)
+    "Communications"          => "AMEX:XLC"     // Communication Services ($36.5B AUM)
+    
+    // Miscellaneous - VTI for broad market
+    "Miscellaneous"           => "AMEX:VTI"     // Total Stock Market ($447B AUM)
     => "AMEX:SPY"
 
 // 3. Granular Industry ETF Mapping 
@@ -544,5 +567,5 @@ if barstate.islast
     
     // Show Industry RS Rating only if valid ETF found and different ETF
     if not na(industryETF) and sectorETF != industryETF
-        set_row(currentRow, "RS(" + indTicker + ")", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+        set_row(currentRow, "RS v " + indTicker + "", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
 

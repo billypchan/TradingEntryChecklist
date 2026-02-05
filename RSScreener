@@ -1,279 +1,186 @@
 //@version=5
-indicator("RS Screener", shorttitle = "RSScreener", overlay = true, dynamic_requests = true)
+indicator("RS Screener", shorttitle = "RSScreener", overlay = false, dynamic_requests = true)
 
-// RS Screener - Lightweight indicator for TradingView Stock Screener
-// Only calculates RS ratings with minimal data requests
+// RS Screener - Minimal requests version for TradingView Screener
+// Outputs: rsRating (vs SPX), rsSectorRating (vs Sector ETF), rsIndustryRating (vs Industry ETF)
+// Optimized to use only 3 security requests
 
 // ==========================================
-// 1. SECTOR & INDUSTRY ETF MAPPING
+// 1. SECTOR & INDUSTRY ETF MAPPINGS
 // ==========================================
 
+// Sector ETF Mapping (largest AUM ETFs)
 sectorETF = switch syminfo.sector
     "Technology Services"     => "AMEX:XLK"
-    "Electronic Technology"   => "NASDAQ:SOXX"
+    "Electronic Technology"   => "NASDAQ:SMH"
     "Finance"                 => "AMEX:XLF"
-    "Health Technology"       => "NASDAQ:IBB"
+    "Health Technology"       => "AMEX:XLV"
+    "Health Services"         => "AMEX:XLV"
     "Retail Trade"            => "AMEX:XRT"
     "Consumer Non-Durables"   => "AMEX:XLP"
-    "Producer Manufacturing"  => "AMEX:XLI"
-    "Energy Minerals"         => "AMEX:XLE"
     "Consumer Durables"       => "AMEX:XLY"
     "Consumer Services"       => "AMEX:XLY"
+    "Distribution Services"   => "AMEX:XLY"
+    "Producer Manufacturing"  => "AMEX:XLI"
+    "Industrial Services"     => "AMEX:XLI"
+    "Commercial Services"     => "AMEX:XLI"
+    "Energy Minerals"         => "AMEX:XLE"
     "Utilities"               => "AMEX:XLU"
     "Non-Energy Minerals"     => "AMEX:XLB"
-    "Industrial Services"     => "AMEX:XLI"
-    "Transportation"          => "AMEX:IYT"
-    "Commercial Services"     => "AMEX:XLI"
-    "Communications"          => "AMEX:XLC"
     "Process Industries"      => "AMEX:XLB"
-    "Health Services"         => "AMEX:XLV"
-    "Distribution Services"   => "AMEX:XLY"
+    "Transportation"          => "AMEX:IYT"
+    "Communications"          => "AMEX:XLC"
     "Miscellaneous"           => "AMEX:VTI"
     => "AMEX:SPY"
 
+// Industry ETF Mapping (largest AUM ETFs)
 industryETF = switch syminfo.industry
-    "Advertising/Marketing Services" => "AMEX:XLC"
-    "Broadcasting" => "AMEX:XLC"
-    "Cable/Satellite TV" => "AMEX:XLC"
-    "Media Conglomerates" => "AMEX:XLC"
-    "Movies/Entertainment" => "AMEX:XLC"
-    "Publishing: Books/Magazines" => "AMEX:XLC"
-    "Publishing: Newspapers" => "AMEX:XLC"
+    // Aerospace & Defense
     "Aerospace & Defense" => "AMEX:ITA"
+    // Agriculture
     "Agricultural Commodities/Milling" => "AMEX:MOO"
-    "Food Distributors" => "AMEX:XLP"
-    "Food Retail" => "AMEX:XRT"
-    "Food: Major Diversified" => "AMEX:XLP"
-    "Food: Meat/Fish/Dairy" => "AMEX:XLP"
-    "Food: Specialty/Candy" => "AMEX:XLP"
+    // Airlines
     "Airlines" => "AMEX:JETS"
+    // Automotive
     "Auto Parts: OEM" => "NASDAQ:CARZ"
     "Automotive Aftermarket" => "NASDAQ:CARZ"
     "Motor Vehicles" => "NASDAQ:CARZ"
-    "Retail: Automotive" => "NASDAQ:CARZ"
+    // Banking
     "Major Banks" => "AMEX:KBE"
     "Regional Banks" => "AMEX:KRE"
     "Investment Banks/Brokers" => "AMEX:IAI"
-    "Investment Managers" => "AMEX:XLF"
-    "Finance/Rental/Leasing" => "AMEX:XLF"
-    "Financial Conglomerates" => "AMEX:XLF"
-    "Financial Publishing/Services" => "AMEX:XLF"
-    "Beverages: Alcoholic" => "AMEX:XLP"
-    "Beverages: Non-Alcoholic" => "AMEX:XLP"
+    // Biotechnology
     "Biotechnology" => "NASDAQ:IBB"
+    // Building & Construction
     "Building Products" => "AMEX:ITB"
     "Construction Materials" => "AMEX:ITB"
-    "Home Furnishings" => "AMEX:ITB"
-    "Home Improvement Chains" => "AMEX:ITB"
     "Homebuilding" => "AMEX:ITB"
-    "Retail: Building Materials" => "AMEX:ITB"
-    "Retail: Home Improvement" => "AMEX:ITB"
+    // Casinos
     "Casinos/Gaming" => "AMEX:BJK"
+    // Chemicals
     "Chemicals: Agricultural" => "AMEX:XLB"
     "Chemicals: Major Diversified" => "AMEX:XLB"
     "Chemicals: Specialty" => "AMEX:XLB"
+    // Clean Energy
     "Alternative Power Generation" => "NASDAQ:ICLN"
     "Environmental Services" => "NASDAQ:ICLN"
-    "Apparel/Footwear" => "AMEX:XRT"
-    "Apparel/Footwear Retail" => "AMEX:XRT"
-    "Consumer Sundries" => "AMEX:XLY"
-    "Electronics/Appliances" => "AMEX:XLY"
-    "Hotels/Resorts/Cruise Lines" => "AMEX:PEJ"
-    "Household/Personal Care" => "AMEX:XLP"
-    "Recreational Products" => "AMEX:XLY"
+    // Energy
     "Coal" => "AMEX:XLE"
     "Contract Drilling" => "AMEX:OIH"
-    "Gas Distributors" => "AMEX:XLE"
     "Integrated Oil" => "AMEX:XLE"
     "Oil & Gas Production" => "AMEX:XOP"
     "Oil & Gas Pipelines" => "AMEX:MLPA"
     "Oil Refining/Marketing" => "AMEX:XLE"
     "Oil Equipment & Services" => "AMEX:OIH"
-    "Insurance Brokers/Services" => "AMEX:KIE"
-    "Life/Health Insurance" => "AMEX:KIE"
-    "Multi-Line Insurance" => "AMEX:KIE"
+    // Gold & Metals
     "Precious Metals" => "AMEX:GDX"
-    "Hospital/Nursing Management" => "AMEX:XLV"
-    "Managed Health Care" => "AMEX:XLV"
-    "Medical Distributors" => "AMEX:XLV"
-    "Medical Specialties" => "AMEX:IHI"
-    "Medical/Nursing Services" => "AMEX:XLV"
-    "Air Freight/Couriers" => "AMEX:IYT"
-    "Commercial Printing/Forms" => "AMEX:XLI"
-    "Containers/Packaging" => "AMEX:XLI"
-    "Electrical Products" => "AMEX:XLI"
-    "Engineering & Construction" => "AMEX:PAVE"
-    "Industrial Conglomerates" => "AMEX:XLI"
-    "Industrial Machinery" => "AMEX:XLI"
-    "Industrial Specialties" => "AMEX:XLI"
-    "Miscellaneous Commercial Services" => "AMEX:XLI"
-    "Miscellaneous Manufacturing" => "AMEX:XLI"
-    "Internet Retail" => "AMEX:IBUY"
-    "Internet Software/Services" => "AMEX:FDN"
     "Aluminum" => "AMEX:XME"
     "Metal Fabrication" => "AMEX:XME"
     "Steel" => "AMEX:SLX"
+    // Healthcare
+    "Medical Specialties" => "AMEX:IHI"
+    "Hospital/Nursing Management" => "AMEX:XLV"
+    "Managed Health Care" => "AMEX:XLV"
+    // Insurance
+    "Insurance Brokers/Services" => "AMEX:KIE"
+    "Life/Health Insurance" => "AMEX:KIE"
+    "Multi-Line Insurance" => "AMEX:KIE"
+    // Internet
+    "Internet Retail" => "AMEX:IBUY"
+    "Internet Software/Services" => "AMEX:FDN"
+    // Pharmaceuticals
     "Pharmaceuticals: Major" => "AMEX:XLV"
     "Pharmaceuticals: Other" => "AMEX:XPH"
+    // Real Estate
     "Real Estate Development" => "AMEX:VNQ"
     "Real Estate Investment Trusts" => "AMEX:VNQ"
-    "Real Estate Management/Services" => "AMEX:VNQ"
-    "Restaurants" => "AMEX:PBJ"
-    "Catalog/Specialty Distribution" => "AMEX:XRT"
+    // Retail
+    "Apparel/Footwear" => "AMEX:XRT"
+    "Apparel/Footwear Retail" => "AMEX:XRT"
     "Department Stores" => "AMEX:XRT"
     "Discount Stores" => "AMEX:XRT"
-    "Drugstore Chains" => "AMEX:XRT"
-    "Electronics/Appliance Stores" => "AMEX:XRT"
-    "Retail: Apparel/Footwear" => "AMEX:XRT"
-    "Retail: Computer/Electronics" => "AMEX:XRT"
-    "Retail: Discount" => "AMEX:XRT"
-    "Retail: Drugstore" => "AMEX:XRT"
-    "Retail: General" => "AMEX:XRT"
-    "Retail: Grocery" => "AMEX:XRT"
-    "Retail: Specialty" => "AMEX:XRT"
     "Specialty Stores" => "AMEX:XRT"
+    // Semiconductors
     "Semiconductors" => "NASDAQ:SMH"
     "Electronic Production Equipment" => "NASDAQ:SMH"
+    // Software
     "Packaged Software" => "AMEX:IGV"
+    // Technology
     "Computer Communications" => "AMEX:XLK"
-    "Computer Peripherals" => "AMEX:XLK"
     "Computer Processing Hardware" => "AMEX:XLK"
     "Data Processing Services" => "AMEX:XLK"
     "Electronic Components" => "AMEX:XLK"
-    "Electronic Equipment/Instruments" => "AMEX:XLK"
-    "Electronics Distributors" => "AMEX:XLK"
     "Information Technology Services" => "AMEX:XLK"
-    "Office Equipment/Supplies" => "AMEX:XLK"
+    // Telecommunications
     "Major Telecommunications" => "AMEX:XLC"
     "Specialty Telecommunications" => "AMEX:XLC"
     "Wireless Telecommunications" => "AMEX:XLC"
-    "Textiles" => "AMEX:XRT"
+    // Timber
     "Forest Products" => "NASDAQ:WOOD"
-    "Paper/Forest Products" => "NASDAQ:WOOD"
-    "Tobacco" => "AMEX:XLP"
+    // Transportation
+    "Air Freight/Couriers" => "AMEX:IYT"
     "Marine Shipping" => "AMEX:BOAT"
-    "Transportation Infrastructure" => "AMEX:IYT"
     "Trucking" => "AMEX:IYT"
+    // Uranium
     "Uranium" => "AMEX:URA"
+    // Utilities
     "Electric Utilities" => "AMEX:XLU"
-    "Utilities: Electric" => "AMEX:XLU"
-    "Utilities: Gas" => "AMEX:XLU"
     "Utilities: Water" => "AMEX:PHO"
-    "Miscellaneous" => "AMEX:VTI"
-    => na
+    // Default to sector ETF if no industry match
+    => sectorETF
 
 // ==========================================
-// 2. DATA FETCHING (Optimized - Single Request)
+// 2. DATA FETCHING (3 requests only)
 // ==========================================
 
-// Fetch all prices in one request call
-[stockClose, spxClose, sectorClose, industryClose] = request.security(syminfo.tickerid, "D", [close, request.security("SP:SPX", "D", close), request.security(sectorETF, "D", close), request.security(industryETF, "D", close)])
+// Request 1: SPX data
+spxClose = request.security("SP:SPX", "D", close)
+
+// Request 2: Sector ETF data
+sectorClose = request.security(sectorETF, "D", close)
+
+// Request 3: Industry ETF data (uses sector if same)
+industryClose = industryETF == sectorETF ? sectorClose : request.security(industryETF, "D", close)
+
+// Current stock close (no request needed)
+stockClose = close
 
 // ==========================================
 // 3. RS CALCULATIONS
 // ==========================================
 
+// Rate of change calculation with safety for early bars
 calc_roc(src, len) =>
     safe_len = math.min(bar_index, len)
-    src / src[safe_len]
+    safe_len > 0 ? src / src[safe_len] : 1.0
 
-// IBD-style weighted performance (40% 3M, 20% 6M, 20% 9M, 20% 12M)
-perfStock   = 0.4 * calc_roc(stockClose, 63) + 0.2 * calc_roc(stockClose, 126) + 0.2 * calc_roc(stockClose, 189) + 0.2 * calc_roc(stockClose, 252)
-perfSPX     = 0.4 * calc_roc(spxClose, 63)   + 0.2 * calc_roc(spxClose, 126)   + 0.2 * calc_roc(spxClose, 189)   + 0.2 * calc_roc(spxClose, 252)
-perfSector  = 0.4 * calc_roc(sectorClose, 63) + 0.2 * calc_roc(sectorClose, 126) + 0.2 * calc_roc(sectorClose, 189) + 0.2 * calc_roc(sectorClose, 252)
-perfIndustry = 0.4 * calc_roc(industryClose, 63) + 0.2 * calc_roc(industryClose, 126) + 0.2 * calc_roc(industryClose, 189) + 0.2 * calc_roc(industryClose, 252)
+// Weighted performance calculation (IBD-style: 40% 3mo, 20% 6mo, 20% 9mo, 20% 12mo)
+calc_perf(src) =>
+    0.4 * calc_roc(src, 63) + 0.2 * calc_roc(src, 126) + 0.2 * calc_roc(src, 189) + 0.2 * calc_roc(src, 252)
 
-// RS Scores
+perfStock = calc_perf(stockClose)
+perfSPX = calc_perf(spxClose)
+perfSector = calc_perf(sectorClose)
+perfIndustry = calc_perf(industryClose)
+
+// RS Score calculations
 rsScore = perfSPX != 0 ? perfStock / perfSPX * 100 : 0
 rsSectorScore = perfSector != 0 ? perfStock / perfSector * 100 : 0
 rsIndustryScore = perfIndustry != 0 ? perfStock / perfIndustry * 100 : 0
 
 // Convert to 1-99 rating scale
-toRating(score) =>
+score_to_rating(score) =>
     score >= 120 ? 99 : score >= 110 ? 90 : score >= 100 ? 80 : score >= 95 ? 70 : score >= 90 ? 60 : score >= 85 ? 50 : score >= 75 ? 40 : score >= 65 ? 30 : score >= 55 ? 20 : score >= 45 ? 10 : 1
 
-rsRating = toRating(rsScore)
-rsSectorRating = toRating(rsSectorScore)
-rsIndustryRating = toRating(rsIndustryScore)
-
-// Boolean flags
-isRSStrong = rsRating >= 80
-isRSWeak = rsRating < 65
-isSectorRSStrong = rsSectorRating >= 80
-isIndustryRSStrong = rsIndustryRating >= 80
-
-// Sector/Industry 20D relative performance vs SPX
-calc_rel(asset, bench) =>
-    val = asset / asset[20] - 1
-    b_val = bench / bench[20] - 1
-    val - b_val
-
-secRS = calc_rel(sectorClose, spxClose)
-indRS = calc_rel(industryClose, spxClose)
-isSecRSStrong = secRS > 0.02
-isIndRSStrong = indRS > 0.02
+rsRating = score_to_rating(rsScore)
+rsSectorRating = score_to_rating(rsSectorScore)
+rsIndustryRating = score_to_rating(rsIndustryScore)
 
 // ==========================================
-// 4. FUNDAMENTAL GROWTH METRICS
+// 4. OUTPUTS FOR SCREENER
 // ==========================================
 
-// Check if asset has financial data
-earningsTime = earnings.future_time
-hasFinancialData = not na(earningsTime)
-
-// Dynamic lookback periods based on timeframe
-barsPerYear = timeframe.ismonthly ? 12 : timeframe.isweekly ? 52 : 252
-barsPerQuarter = timeframe.ismonthly ? 3 : timeframe.isweekly ? 13 : 63
-
-// Fetch financial data only if available
-var float salesTTM = na
-var float epsTTM = na
-var float salesTTM_1Y = na
-var float epsTTM_1Y = na
-var float salesTTM_Q1 = na
-var float epsTTM_Q1 = na
-
-if hasFinancialData
-    salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
-    epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
-    salesTTM_1Y := salesTTM[barsPerYear]
-    epsTTM_1Y := epsTTM[barsPerYear]
-    salesTTM_Q1 := salesTTM[barsPerQuarter]
-    epsTTM_Q1 := epsTTM[barsPerQuarter]
-
-// Growth calculations
-calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
-salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
-epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
-
-// Previous quarter growth for acceleration
-prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
-prevEpsGrowth = hasFinancialData and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
-
-// Fundamental flags
-isGrowthStrong = hasFinancialData and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
-isSalesAccelerating = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
-isEpsAccelerating = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
-isBothAccelerating = isSalesAccelerating and isEpsAccelerating
-
-// Combined "all true" flag: RS strong + Growth strong + Accelerating
-isAllStrong = isRSStrong and isGrowthStrong and isBothAccelerating
-
-// ==========================================
-// 4. SCREENER OUTPUTS
-// ==========================================
-
-
-// Boolean flags (1=true, 0=false)
-plot(isRSStrong ? 1 : 0, "isRSStrong", display=display.none)
-plot(isSectorRSStrong ? 1 : 0, "isSectorRSStrong", display=display.none)
-plot(isIndustryRSStrong ? 1 : 0, "isIndustryRSStrong", display=display.none)
-plot(isSecRSStrong ? 1 : 0, "isSecRSStrong", display=display.none)
-plot(isIndRSStrong ? 1 : 0, "isIndRSStrong", display=display.none)
-
-// Fundamental flags (1=true, 0=false)
-plot(isGrowthStrong ? 1 : 0, "isGrowthStrong", display=display.none)
-plot(isBothAccelerating ? 1 : 0, "isAccelerating", display=display.none)
-
-// Combined flag - all criteria met
-plot(isAllStrong ? 1 : 0, "isAllStrong", display=display.none)
+// Plot values (for screener column access, hidden by default)
+plot(rsRating, "RS Rating", color=color.blue, display=display.data_window + display.status_line)
+plot(rsSectorRating, "RS vs Sector", color=color.orange, display=display.data_window + display.status_line)
+plot(rsIndustryRating, "RS vs Industry", color=color.purple, display=display.data_window + display.status_line)
