@@ -307,7 +307,7 @@ industryETF = switch syminfo.industry
     "Retail: Home Improvement" => "AMEX:ITB"
     
     // Casinos/Gaming - BJK ($569M AUM)
-    "Casinos/Gaming" => "AMEX:BJK"
+    "Casinos/Gaming" => "BJK"
     
     // Chemicals - XLB ($12.7B AUM) for broad materials
     "Chemicals: Agricultural" => "AMEX:XLB"
