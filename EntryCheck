@@ -1,4 +1,4 @@
-//@version=5
+//@version=6
 indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_requests = true)
 
 // Entry Checklist
@@ -10,26 +10,25 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // 📊 Key Features
 // Market Context Analysis:
 
-// Seasonality: Historical S&P 500 monthly return patterns with strength/weakness labels
-// Market Breadth (S5TH): Percentage of S&P 500 stocks above their 50-day moving average
-// Fear/Greed Index (VIX): Market sentiment indicator with threshold-based color coding
+// Seasonality: 10-year average return of TAIEX on Taiwan charts, otherwise the S&P 500
+// Market Breadth (S5TH): US only. Percentage of S&P 500 stocks above their 50-day moving average
+// Fear/Greed Index (VIX): US only
 // Fundamental Analysis (Stocks Only):
 
 // Earnings Dates: Upcoming earnings announcement tracking with 14-day warning
 // Growth Metrics: Year-over-year sales and EPS growth rates
 // Acceleration: Quarter-over-quarter growth acceleration analysis
-// P/E (本益比): Trailing P/E vs the median trailing P/E of large US stocks in the same industry
+// P/E (本益比): Trailing P/E vs Taiwan peers on TWSE/TPEX, otherwise vs US peers
 // Sector & Industry Analysis:
 
-// Sector Relative Strength: 20-day performance vs SPY benchmark
-// Industry Relative Strength: Granular industry ETF performance comparison
+// Sector Relative Strength: US sector ETF vs SPY. Taiwan uses same-industry peers vs TAIEX
+// Industry Relative Strength: US industry ETF, or Taiwan peers on TWSE/TPEX
 // 120+ Industry ETF Mappings: Comprehensive sector and industry classifications
 // Technical Analysis:
 
 // IBD-Style RS Rating: Multi-timeframe relative strength scoring (1-99 scale)
-// RS vs SPX: Stock performance relative to S&P 500
-// RS vs Sector: Performance relative to sector ETF
-// RS vs Industry: Performance relative to industry ETF
+// RS vs benchmark: TAIEX on TWSE/TPEX, S&P 500 on every other chart
+// RS vs Sector / Industry: US ETFs, or the Taiwan peer basket on TWSE/TPEX
 // 🎨 Visual Design
 // Dynamic Table: Bottom-right overlay with professional dark theme
 // Color-Coded Signals: Green (bullish), red (bearish), neutral (white)
@@ -51,6 +50,9 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // NVDA - PE/Ind below or near semiconductor large-cap median
 // GOOG - PE/Ind vs internet software large caps; loss-makers show "loss"
 // BTCUSD - no PE row
+// TPEX:5904 - PE vs Taiwan specialty stores, RS v TAIEX, no S5TH or VIX
+// TWSE:2330 - PE vs Taiwan semiconductors, RS v TAIEX
+// HKEX:700 - US checklist (only Taiwan uses a local peer basket)
 // ==========================================
 
 // ==========================================
@@ -70,25 +72,35 @@ c_text = color.white
 // 2. DATA FETCHING & CALCULATIONS
 // ==========================================
 
-// --- A. Market Breadth (S5TH) ---
-// Percentage of SP500 stocks above 50-day MA
-s5th = request.security("INDEX:S5TH", "D", close)
-isBreadthOversold = s5th < 20
-isBreadthOverbought = s5th > 80
-s5thStr = str.tostring(s5th, "#") + "%"
-
-// --- A2. Greed/Fear Index (VIX) ---
-vix = request.security("CBOE:VIX", "D", close)
-vixStr = na(vix) ? "N/A" : str.tostring(vix, "#")
-isGreed = vix <= 15
-isFear = vix >= 25
-
 // --- Determine if asset has fundamental data ---
 isCrypto = syminfo.type == "crypto"
 isCommodity = syminfo.type == "commodity"
 isForex = syminfo.type == "forex" 
 isIndex = syminfo.type == "index"
 isFund = syminfo.type == "fund"
+
+// --- A. Home market ---
+// TWSE and TPEX use Taiwan peers and TAIEX. Every other chart keeps the US checklist.
+bool isTaiwan = syminfo.prefix == "TWSE" or syminfo.prefix == "TPEX" or (syminfo.prefix == "" and syminfo.country == "TW")
+bool isUSMarket = not isTaiwan
+bool showGlobalRisk = not isTaiwan
+string benchSym = isTaiwan ? "TWSE:IX0001" : "SP:SPX"
+string benchName = isTaiwan ? "TAIEX" : "SPX"
+string benchReq = benchSym
+string mktPlace = isTaiwan ? "Taiwan" : "US"
+
+// Breadth and VIX are US series. They stay off Taiwan charts.
+float s5th = na
+float vix = na
+if showGlobalRisk
+    s5th := request.security("INDEX:S5TH", "D", close, ignore_invalid_symbol=true)
+    vix := request.security("CBOE:VIX", "D", close, ignore_invalid_symbol=true)
+isBreadthOversold = s5th < 20
+isBreadthOverbought = s5th > 80
+s5thStr = na(s5th) ? "N/A" : str.tostring(s5th, "0") + "%"
+vixStr = na(vix) ? "N/A" : str.tostring(vix, "0")
+isGreed = vix <= 15
+isFear = vix >= 25
 
 // --- B. Earnings Date Check ---
 // Try to get earnings data to determine if financial data is available
@@ -98,26 +110,47 @@ daysUntilEarnings = not na(earningsTime) ? (earningsTime - timenow) / 86400000 :
 isEarningsSoon = not na(daysUntilEarnings) and daysUntilEarnings >= 0 and daysUntilEarnings <= 14
 earningsDateStr = na(earningsTime) ? "N/A" : str.format("{0,date,MMMdd}", earningsTime)
 
-// --- C. Seasonality ---
+// --- C. Seasonality of the home index ---
+// Completed same-calendar-month returns over the last 10 years. The current month is excluded.
+monthHistAvg() =>
+    float s = 0.0
+    int n = 0
+    if not na(close[13]) and close[13] != 0
+        s += close[12] / close[13] - 1.0
+        n += 1
+    if not na(close[25]) and close[25] != 0
+        s += close[24] / close[25] - 1.0
+        n += 1
+    if not na(close[37]) and close[37] != 0
+        s += close[36] / close[37] - 1.0
+        n += 1
+    if not na(close[49]) and close[49] != 0
+        s += close[48] / close[49] - 1.0
+        n += 1
+    if not na(close[61]) and close[61] != 0
+        s += close[60] / close[61] - 1.0
+        n += 1
+    if not na(close[73]) and close[73] != 0
+        s += close[72] / close[73] - 1.0
+        n += 1
+    if not na(close[85]) and close[85] != 0
+        s += close[84] / close[85] - 1.0
+        n += 1
+    if not na(close[97]) and close[97] != 0
+        s += close[96] / close[97] - 1.0
+        n += 1
+    if not na(close[109]) and close[109] != 0
+        s += close[108] / close[109] - 1.0
+        n += 1
+    if not na(close[121]) and close[121] != 0
+        s += close[120] / close[121] - 1.0
+        n += 1
+    n >= 5 ? s / n * 100.0 : na
+
 currentMonth = month(timenow)
-// Historical S&P 500 monthly returns (average)
-monthlyReturns = switch currentMonth
-    1 => 1.07   // January
-    2 => -0.01  // February
-    3 => 1.13   // March
-    4 => 1.46   // April
-    5 => 0.30   // May
-    6 => 0.11   // June
-    7 => 1.28   // July
-    8 => -0.01  // August
-    9 => -0.72  // September
-    10 => 0.91  // October
-    11 => 1.82  // November
-    12 => 1.49  // December
-    => 0.00
-    
-isWeakMonth = monthlyReturns < 0.50 // Months with <0.50% average return
-isStrongMonth = monthlyReturns > 1.40 // Months with >1.40% average return
+seasRet = request.security(benchReq, "M", monthHistAvg(), ignore_invalid_symbol=true)
+isWeakMonth = seasRet < 0.50
+isStrongMonth = seasRet > 1.40
 
 monthName = switch currentMonth
     1 => "Jan"
@@ -134,326 +167,93 @@ monthName = switch currentMonth
     12 => "Dec"
     => "N/A"
 
-seasonalStr = str.format("{0}({1})", monthName, str.tostring(monthlyReturns, "#.##"))
+// Whole numbers only, so the table fits a phone.
+n0(float x) =>
+    str.tostring(x, "0")
+
+sgn0(float x) =>
+    string t = n0(x)
+    x > 0 and t != "0" ? "+" + t : t
+
+seasonalStr = na(seasRet) ? "N/A" : monthName + sgn0(seasRet)
 
 // --- D. RS Rating vs SPX (IBD Style) ---
-[spxClose, stockClose] = request.security(syminfo.tickerid, "D", [request.security("SP:SPX", "D", close), close])
+[benchClose, stockClose] = request.security(syminfo.tickerid, "D", [request.security(benchReq, "D", close, ignore_invalid_symbol=true), close])
 
 calc_roc(src, len) =>
     safe_len = math.min(bar_index, len)
     src / src[safe_len]
 
-perfStock = 0.4 * calc_roc(stockClose, 63) + 0.2 * calc_roc(stockClose, 126) + 0.2 * calc_roc(stockClose, 189) + 0.2 * calc_roc(stockClose, 252)
-perfSPX   = 0.4 * calc_roc(spxClose, 63)   + 0.2 * calc_roc(spxClose, 126)   + 0.2 * calc_roc(spxClose, 189)   + 0.2 * calc_roc(spxClose, 252)
-rsScore   = perfSPX != 0 ? perfStock / perfSPX * 100 : 0
+rsBucket(float score) =>
+    score >= 120 ? 99 : score >= 110 ? 90 : score >= 100 ? 80 : score >= 95 ? 70 : score >= 90 ? 60 : score >= 85 ? 50 : score >= 75 ? 40 : score >= 65 ? 30 : score >= 55 ? 20 : score >= 45 ? 10 : 1
 
-rsRating = rsScore >= 120 ? 99 : rsScore >= 110 ? 90 : rsScore >= 100 ? 80 : rsScore >= 95 ? 70 : rsScore >= 90 ? 60 : rsScore >= 85 ? 50 : rsScore >= 75 ? 40 : rsScore >= 65 ? 30 : rsScore >= 55 ? 20 : rsScore >= 45 ? 10 : 1
+perfStock = 0.4 * calc_roc(stockClose, 63) + 0.2 * calc_roc(stockClose, 126) + 0.2 * calc_roc(stockClose, 189) + 0.2 * calc_roc(stockClose, 252)
+perfBench = 0.4 * calc_roc(benchClose, 63) + 0.2 * calc_roc(benchClose, 126) + 0.2 * calc_roc(benchClose, 189) + 0.2 * calc_roc(benchClose, 252)
+rsScore   = perfBench != 0 ? perfStock / perfBench * 100 : 0
+rsRating = rsBucket(rsScore)
 isRSWeak = rsRating < 65
 isRSStrong = rsRating >= 80
 
 // --- E. Growth Metrics ---
-// Only fetch financial data for stocks
+// TTM versus four fiscal quarters earlier. The offsets live on the quarterly
+// series: a chart-bar offset of 252 is one year only on a daily chart, and on
+// intraday charts the figure matched itself and the row printed 0/0.
+finQ() =>
+    float rev = request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
+    float eps = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
+    [rev, rev[1], rev[4], rev[5], eps, eps[1], eps[4], eps[5]]
 
-// Calculate dynamic lookback periods based on timeframe
-// 1 year: Daily=252, Weekly=52, Monthly=12
-// 1 quarter: Daily=63, Weekly=13, Monthly=3
-barsPerYear = timeframe.ismonthly ? 12 : timeframe.isweekly ? 52 : 252
-barsPerQuarter = timeframe.ismonthly ? 3 : timeframe.isweekly ? 13 : 63
+[salesTTM, sales1Q, sales4Q, sales5Q, epsTTM, eps1Q, eps4Q, eps5Q] = request.security(syminfo.tickerid, "3M", finQ(), lookahead=barmerge.lookahead_on, ignore_invalid_symbol=true)
 
-var float salesTTM = na
-var float epsTTM = na
-var float salesTTM_1Y = na
-var float epsTTM_1Y = na
-
-if hasFinancialData
-    salesTTM := request.financial(syminfo.tickerid, "TOTAL_REVENUE", "TTM")
-    epsTTM := request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM")
-    salesTTM_1Y := salesTTM[barsPerYear]
-    epsTTM_1Y := epsTTM[barsPerYear]
-
-calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev != 0) ? (cur / prev - 1) : na
-salesGrowth = calc_growth(salesTTM, salesTTM_1Y)
-epsGrowth = calc_growth(epsTTM, epsTTM_1Y)
-salesEpsStr = not hasFinancialData ? "No Data" : (na(salesGrowth) or na(epsGrowth)) ? "N/A" : str.format("S:{0,number,#}% E:{1,number,#}%", salesGrowth * 100, epsGrowth * 100)
+// Positive base only. A loss in the base period makes the percent meaningless.
+calc_growth(cur, prev) => (not na(cur) and not na(prev) and prev > 0) ? (cur / prev - 1) : na
+salesGrowth = calc_growth(salesTTM, sales4Q)
+epsGrowth = calc_growth(epsTTM, eps4Q)
+salesEpsStr = not hasFinancialData ? "No Data" : (na(salesGrowth) or na(epsGrowth)) ? "N/A" : n0(salesGrowth * 100) + "/" + n0(epsGrowth * 100)
 isGrowthStrong = hasFinancialData and nz(salesGrowth) > 0.15 and nz(epsGrowth) > 0.15
 
 // --- F. Earnings Acceleration Check ---
-// Check if current quarter growth is accelerating vs previous quarter
-// Skip for crypto assets
-var float salesTTM_Q1 = na
-var float epsTTM_Q1 = na
+// Change in the year-over-year rate versus the prior fiscal quarter.
+// Prior rate uses the quarter then, over the quarter five periods earlier.
+prevSalesGrowth = calc_growth(sales1Q, sales5Q)
+prevEpsGrowth = calc_growth(eps1Q, eps5Q)
 
-if hasFinancialData and not na(salesTTM) and not na(epsTTM)
-    salesTTM_Q1 := salesTTM[barsPerQuarter] // Reuse fetched data
-    epsTTM_Q1 := epsTTM[barsPerQuarter]
-
-// Calculate previous quarter's year-over-year growth rate
-prevSalesGrowth = hasFinancialData and not na(salesTTM_Q1) and not na(salesTTM_1Y) and salesTTM_1Y != 0 ? (salesTTM_Q1 / salesTTM_1Y - 1) : na
-prevEpsGrowth = hasFinancialData and not na(epsTTM_Q1) and not na(epsTTM_1Y) and epsTTM_1Y != 0 ? (epsTTM_Q1 / epsTTM_1Y - 1) : na
-
-// Check if growth is accelerating (current growth > previous quarter growth)
 isSalesAccelerating = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) and salesGrowth > prevSalesGrowth
 isEpsAccelerating = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) and epsGrowth > prevEpsGrowth
 isBothAccelerating = hasFinancialData and isSalesAccelerating and isEpsAccelerating
 
-// Calculate acceleration rate
 salesAcceleration = hasFinancialData and not na(salesGrowth) and not na(prevSalesGrowth) ? (salesGrowth - prevSalesGrowth) * 100 : na
 epsAcceleration = hasFinancialData and not na(epsGrowth) and not na(prevEpsGrowth) ? (epsGrowth - prevEpsGrowth) * 100 : na
 
-accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : "S:" + str.tostring(salesAcceleration, "#") + "% E:" + str.tostring(epsAcceleration, "#") + "%"
+accelerationStr = not hasFinancialData ? "No Data" : (na(salesAcceleration) or na(epsAcceleration)) ? "N/A" : n0(salesAcceleration) + "/" + n0(epsAcceleration)
 
 // --- G. Enhanced Sector & Industry Logic ---
+
+findList(string table, string kind, string name) =>
+    string out = ""
+    if name != "" and table != ""
+        string key = "\n" + kind + "\t" + name + "\t"
+        int at = str.pos(table, key)
+        if not na(at)
+            string rest = str.substring(table, at + str.length(key))
+            int nl = str.pos(rest, "\n")
+            out := na(nl) ? rest : str.substring(rest, 0, nl)
+    out
+
 // 2. Sector ETF Mapping 
 // Using largest AUM ETFs from etfdb.com/etfs/sector/ for best liquidity
 // Format: AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs
-sectorETF = switch syminfo.sector
-    // Technology - XLK ($92B) or VGT ($113B)
-    "Technology Services"     => "AMEX:XLK"     // S&P 500 IT Sector ($92B AUM)
-    "Electronic Technology"   => "NASDAQ:SMH"   // Semiconductors ($44.6B AUM) - larger than SOXX
-    
-    // Financials - XLF ($55B)
-    "Finance"                 => "AMEX:XLF"     // Financial Select Sector ($55B AUM)
-    
-    // Healthcare - XLV ($41B) or IBB ($8.5B for biotech)
-    "Health Technology"       => "AMEX:XLV"     // Health Care Select Sector ($41B AUM)
-    "Health Services"         => "AMEX:XLV"     // Health Care Select Sector ($41B AUM)
-    
-    // Consumer - XLY ($33B) for discretionary, XLP ($28B) for staples
-    "Retail Trade"            => "AMEX:XRT"     // S&P Retail ($1.8B AUM) - more specific
-    "Consumer Non-Durables"   => "AMEX:XLP"     // Consumer Staples ($28B AUM)
-    "Consumer Durables"       => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
-    "Consumer Services"       => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
-    "Distribution Services"   => "AMEX:XLY"     // Consumer Discretionary ($33B AUM)
-    
-    // Industrials - XLI ($49B)
-    "Producer Manufacturing"  => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
-    "Industrial Services"     => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
-    "Commercial Services"     => "AMEX:XLI"     // Industrial Select Sector ($49B AUM)
-    
-    // Energy - XLE ($32.5B)
-    "Energy Minerals"         => "AMEX:XLE"     // Energy Select Sector ($32.5B AUM)
-    
-    // Utilities - XLU ($37B)
-    "Utilities"               => "AMEX:XLU"     // Utilities Select Sector ($37B AUM)
-    
-    // Materials - XLB ($12.7B)
-    "Non-Energy Minerals"     => "AMEX:XLB"     // Materials Select Sector ($12.7B AUM)
-    "Process Industries"      => "AMEX:XLB"     // Materials Select Sector ($12.7B AUM)
-    
-    // Transportation - IYT ($1.2B)
-    "Transportation"          => "AMEX:IYT"     // Transportation Average ($1.2B AUM)
-    
-    // Communications - XLC ($36.5B)
-    "Communications"          => "AMEX:XLC"     // Communication Services ($36.5B AUM)
-    
-    // Miscellaneous - VTI for broad market
-    "Miscellaneous"           => "AMEX:VTI"     // Total Stock Market ($447B AUM)
-    => "AMEX:SPY"
-
-// 3. Granular Industry ETF Mapping 
-// Using largest AUM ETFs from etfdb.com/etfs/industry/ for best liquidity
-// Format: AMEX for NYSE Arca, NASDAQ for NASDAQ-listed ETFs
-industryLower = str.lower(syminfo.industry)
-industryETF = switch syminfo.industry
-    // Advertising & Media
-    "Advertising/Marketing Services" => "AMEX:XLC"
-    "Broadcasting" => "AMEX:XLC"
-    "Cable/Satellite TV" => "AMEX:XLC"
-    "Media Conglomerates" => "AMEX:XLC"
-    "Movies/Entertainment" => "AMEX:XLC"
-    "Publishing: Books/Magazines" => "AMEX:XLC"
-    "Publishing: Newspapers" => "AMEX:XLC"
-    
-    // Aerospace & Defense - ITA ($40.9B AUM)
-    "Aerospace & Defense" => "AMEX:ITA"
-    
-    // Agriculture & Food
-    "Agricultural Commodities/Milling" => "AMEX:MOO"    // VanEck Agribusiness ETF
-    "Food Distributors" => "AMEX:XLP"
-    "Food Retail" => "AMEX:XRT"
-    "Food: Major Diversified" => "AMEX:XLP"
-    "Food: Meat/Fish/Dairy" => "AMEX:XLP"
-    "Food: Specialty/Candy" => "AMEX:XLP"
-    
-    // Airlines - JETS ($914M AUM, most specific)
-    "Airlines" => "AMEX:JETS"
-    
-    // Automotive - CARZ ($5.9B AUM)
-    "Auto Parts: OEM" => "NASDAQ:CARZ"
-    "Automotive Aftermarket" => "NASDAQ:CARZ"
-    "Motor Vehicles" => "NASDAQ:CARZ"
-    "Retail: Automotive" => "NASDAQ:CARZ"
-    
-    // Banking & Finance
-    "Major Banks" => "AMEX:KBE"         // SPDR S&P Bank ETF ($2.8B AUM)
-    "Regional Banks" => "AMEX:KRE"      // SPDR S&P Regional Banking ETF ($4B AUM)
-    "Investment Banks/Brokers" => "AMEX:IAI"  // iShares U.S. Broker-Dealers ($1.8B AUM)
-    "Investment Managers" => "AMEX:XLF"
-    // "Investment Trusts/Mutual Funds" => "AMEX:XLF"
-    "Finance/Rental/Leasing" => "AMEX:XLF"
-    "Financial Conglomerates" => "AMEX:XLF"
-    "Financial Publishing/Services" => "AMEX:XLF"
-    
-    // Beverages
-    "Beverages: Alcoholic" => "AMEX:XLP"
-    "Beverages: Non-Alcoholic" => "AMEX:XLP"
-    
-    // Biotechnology - IBB ($8.8B AUM) or XBI ($8.7B AUM, equal-weighted)
-    "Biotechnology" => "NASDAQ:IBB"
-    
-    // Building & Construction - ITB ($2.9B AUM) or XHB ($1.8B AUM)
-    "Building Products" => "AMEX:ITB"
-    "Construction Materials" => "AMEX:ITB"
-    "Home Furnishings" => "AMEX:ITB"
-    "Home Improvement Chains" => "AMEX:ITB"
-    "Homebuilding" => "AMEX:ITB"
-    "Retail: Building Materials" => "AMEX:ITB"
-    "Retail: Home Improvement" => "AMEX:ITB"
-    
-    // Casinos/Gaming - BJK ($569M AUM)
-    "Casinos/Gaming" => "BJK"
-    
-    // Chemicals - XLB ($12.7B AUM) for broad materials
-    "Chemicals: Agricultural" => "AMEX:XLB"
-    "Chemicals: Major Diversified" => "AMEX:XLB"
-    "Chemicals: Specialty" => "AMEX:XLB"
-    
-    // Clean Energy - ICLN ($4.6B AUM) or QCLN
-    "Alternative Power Generation" => "NASDAQ:ICLN"
-    "Environmental Services" => "NASDAQ:ICLN"
-    
-    // Consumer Discretionary
-    "Apparel/Footwear" => "AMEX:XRT"
-    "Apparel/Footwear Retail" => "AMEX:XRT"
-    "Consumer Sundries" => "AMEX:XLY"
-    "Electronics/Appliances" => "AMEX:XLY"
-    "Hotels/Resorts/Cruise Lines" => "AMEX:PEJ"  // Invesco Leisure & Entertainment
-    "Household/Personal Care" => "AMEX:XLP"
-    "Recreational Products" => "AMEX:XLY"
-    
-    // Energy - XLE ($31.3B AUM) for broad, XOP ($2B AUM) for E&P
-    "Coal" => "AMEX:XLE"
-    "Contract Drilling" => "AMEX:OIH"       // VanEck Oil Services ETF ($2.3B AUM)
-    "Gas Distributors" => "AMEX:XLE"
-    "Integrated Oil" => "AMEX:XLE"
-    "Oil & Gas Production" => "AMEX:XOP"    // SPDR S&P Oil & Gas E&P ETF ($2B AUM)
-    "Oil & Gas Pipelines" => "AMEX:MLPA"    // Global X MLP ETF ($1.5B AUM)
-    "Oil Refining/Marketing" => "AMEX:XLE"
-    "Oil Equipment & Services" => "AMEX:OIH"
-    
-    // Financials - XLF ($55.7B AUM) for broad
-    "Insurance Brokers/Services" => "AMEX:KIE"  // SPDR S&P Insurance ETF ($1.3B AUM)
-    "Life/Health Insurance" => "AMEX:KIE"
-    "Multi-Line Insurance" => "AMEX:KIE"
-    
-    // Gold & Precious Metals - GDX ($52B AUM)
-    "Precious Metals" => "AMEX:GDX"         // VanEck Gold Miners ETF
-    
-    // Healthcare - XLV ($41.2B AUM) for broad
-    "Hospital/Nursing Management" => "AMEX:XLV"
-    "Managed Health Care" => "AMEX:XLV"
-    "Medical Distributors" => "AMEX:XLV"
-    "Medical Specialties" => "AMEX:IHI"     // iShares U.S. Medical Devices ($4.1B AUM)
-    "Medical/Nursing Services" => "AMEX:XLV"
-    
-    // Industrials - XLI ($49.6B AUM) for broad
-    "Air Freight/Couriers" => "AMEX:IYT"    // iShares Transportation Average ($1.2B AUM)
-    "Commercial Printing/Forms" => "AMEX:XLI"
-    "Containers/Packaging" => "AMEX:XLI"
-    "Electrical Products" => "AMEX:XLI"
-    "Engineering & Construction" => "AMEX:PAVE"  // Global X U.S. Infrastructure ($7.8B AUM)
-    "Industrial Conglomerates" => "AMEX:XLI"
-    "Industrial Machinery" => "AMEX:XLI"
-    "Industrial Specialties" => "AMEX:XLI"
-    "Miscellaneous Commercial Services" => "AMEX:XLI"
-    "Miscellaneous Manufacturing" => "AMEX:XLI"
-    
-    // Internet - FDN ($19B AUM) for Internet
-    "Internet Retail" => "AMEX:IBUY"        // Amplify Online Retail ETF
-    "Internet Software/Services" => "AMEX:FDN"
-    
-    // Materials & Mining
-    "Aluminum" => "AMEX:XME"                // SPDR S&P Metals & Mining ($1.8B AUM)
-    "Metal Fabrication" => "AMEX:XME"
-    "Steel" => "AMEX:SLX"                   // VanEck Steel ETF ($182M AUM)
-    
-    // Pharmaceuticals - XPH or IBB
-    "Pharmaceuticals: Major" => "AMEX:XLV"  // Use broader healthcare for major pharma
-    "Pharmaceuticals: Other" => "AMEX:XPH"  // SPDR S&P Pharmaceuticals ($3B AUM)
-    
-    // Real Estate - VNQ ($76.6B AUM) for broad REITs
-    "Real Estate Development" => "AMEX:VNQ"
-    "Real Estate Investment Trusts" => "AMEX:VNQ"
-    "Real Estate Management/Services" => "AMEX:VNQ"
-    
-    // Restaurants
-    "Restaurants" => "AMEX:PBJ"             // Invesco Food & Beverage ETF
-    
-    // Retail - XRT ($1.8B AUM)
-    "Catalog/Specialty Distribution" => "AMEX:XRT"
-    "Department Stores" => "AMEX:XRT"
-    "Discount Stores" => "AMEX:XRT"
-    "Drugstore Chains" => "AMEX:XRT"
-    "Electronics/Appliance Stores" => "AMEX:XRT"
-    "Retail: Apparel/Footwear" => "AMEX:XRT"
-    "Retail: Computer/Electronics" => "AMEX:XRT"
-    "Retail: Discount" => "AMEX:XRT"
-    "Retail: Drugstore" => "AMEX:XRT"
-    "Retail: General" => "AMEX:XRT"
-    "Retail: Grocery" => "AMEX:XRT"
-    "Retail: Specialty" => "AMEX:XRT"
-    "Specialty Stores" => "AMEX:XRT"
-    
-    // Semiconductors - SMH ($43.9B AUM, largest) or SOXX ($27B AUM)
-    "Semiconductors" => "NASDAQ:SMH"        // VanEck Semiconductor ETF
-    "Electronic Production Equipment" => "NASDAQ:SMH"
-    
-    // Software - IGV ($7.1B AUM)
-    "Packaged Software" => "AMEX:IGV"       // iShares Expanded Tech-Software
-    
-    // Technology - XLK ($94.9B AUM) or VGT ($115.8B AUM)
-    "Computer Communications" => "AMEX:XLK"
-    "Computer Peripherals" => "AMEX:XLK"
-    "Computer Processing Hardware" => "AMEX:XLK"
-    "Data Processing Services" => "AMEX:XLK"
-    "Electronic Components" => "AMEX:XLK"
-    "Electronic Equipment/Instruments" => "AMEX:XLK"
-    "Electronics Distributors" => "AMEX:XLK"
-    "Information Technology Services" => "AMEX:XLK"
-    "Office Equipment/Supplies" => "AMEX:XLK"
-    
-    // Telecommunications - XLC ($36.5B AUM)
-    "Major Telecommunications" => "AMEX:XLC"
-    "Specialty Telecommunications" => "AMEX:XLC"
-    "Wireless Telecommunications" => "AMEX:XLC"
-    
-    // Textiles
-    "Textiles" => "AMEX:XRT"
-    
-    // Timber & Forest Products - WOOD ($308M AUM)
-    "Forest Products" => "NASDAQ:WOOD"
-    "Paper/Forest Products" => "NASDAQ:WOOD"
-    
-    // Tobacco
-    "Tobacco" => "AMEX:XLP"
-    
-    // Transportation - IYT ($1.2B AUM)
-    "Marine Shipping" => "AMEX:BOAT"        // SonicShares Global Shipping ETF
-    "Transportation Infrastructure" => "AMEX:IYT"
-    "Trucking" => "AMEX:IYT"
-    
-    // Uranium & Nuclear - URA ($9.7B AUM combined)
-    "Uranium" => "AMEX:URA"                 // Global X Uranium ETF
-    
-    // Utilities - XLU ($37.9B AUM)
-    "Electric Utilities" => "AMEX:XLU"
-    "Utilities: Electric" => "AMEX:XLU"
-    "Utilities: Gas" => "AMEX:XLU"
-    "Utilities: Water" => "AMEX:PHO"        // Invesco Water Resources ($2.1B AUM)
-    
-    // Miscellaneous
-    "Miscellaneous" => "AMEX:VTI"
-    => na
+// Sector and industry ETFs are lookup strings. Each switch arm was a local scope,
+// and the script was over Pine's 550-scope limit.
+string secEtfTable = "\nE\tTechnology Services\tAMEX:XLK\nE\tElectronic Technology\tNASDAQ:SMH\nE\tFinance\tAMEX:XLF\nE\tHealth Technology\tAMEX:XLV\nE\tHealth Services\tAMEX:XLV\nE\tRetail Trade\tAMEX:XRT\nE\tConsumer Non-Durables\tAMEX:XLP\nE\tConsumer Durables\tAMEX:XLY\nE\tConsumer Services\tAMEX:XLY\nE\tDistribution Services\tAMEX:XLY\nE\tProducer Manufacturing\tAMEX:XLI\nE\tIndustrial Services\tAMEX:XLI\nE\tCommercial Services\tAMEX:XLI\nE\tEnergy Minerals\tAMEX:XLE\nE\tUtilities\tAMEX:XLU\nE\tNon-Energy Minerals\tAMEX:XLB\nE\tProcess Industries\tAMEX:XLB\nE\tTransportation\tAMEX:IYT\nE\tCommunications\tAMEX:XLC\nE\tMiscellaneous\tAMEX:VTI"
+string secEtfHit = findList(secEtfTable, "E", syminfo.sector)
+sectorETF = secEtfHit == "" ? "AMEX:SPY" : secEtfHit
+string indEtfTable0 = "\nE\tAdvertising/Marketing Services\tAMEX:XLC\nE\tBroadcasting\tAMEX:XLC\nE\tCable/Satellite TV\tAMEX:XLC\nE\tMedia Conglomerates\tAMEX:XLC\nE\tMovies/Entertainment\tAMEX:XLC\nE\tPublishing: Books/Magazines\tAMEX:XLC\nE\tPublishing: Newspapers\tAMEX:XLC\nE\tAerospace & Defense\tAMEX:ITA\nE\tAgricultural Commodities/Milling\tAMEX:MOO\nE\tFood Distributors\tAMEX:XLP\nE\tFood Retail\tAMEX:XRT\nE\tFood: Major Diversified\tAMEX:XLP\nE\tFood: Meat/Fish/Dairy\tAMEX:XLP\nE\tFood: Specialty/Candy\tAMEX:XLP\nE\tAirlines\tAMEX:JETS\nE\tAuto Parts: OEM\tNASDAQ:CARZ\nE\tAutomotive Aftermarket\tNASDAQ:CARZ\nE\tMotor Vehicles\tNASDAQ:CARZ\nE\tRetail: Automotive\tNASDAQ:CARZ\nE\tMajor Banks\tAMEX:KBE\nE\tRegional Banks\tAMEX:KRE\nE\tInvestment Banks/Brokers\tAMEX:IAI\nE\tInvestment Managers\tAMEX:XLF\nE\tFinance/Rental/Leasing\tAMEX:XLF\nE\tFinancial Conglomerates\tAMEX:XLF\nE\tFinancial Publishing/Services\tAMEX:XLF\nE\tBeverages: Alcoholic\tAMEX:XLP\nE\tBeverages: Non-Alcoholic\tAMEX:XLP\nE\tBiotechnology\tNASDAQ:IBB\nE\tBuilding Products\tAMEX:ITB\nE\tConstruction Materials\tAMEX:ITB\nE\tHome Furnishings\tAMEX:ITB\nE\tHome Improvement Chains\tAMEX:ITB\nE\tHomebuilding\tAMEX:ITB\nE\tRetail: Building Materials\tAMEX:ITB\nE\tRetail: Home Improvement\tAMEX:ITB\nE\tCasinos/Gaming\tBJK\nE\tChemicals: Agricultural\tAMEX:XLB\nE\tChemicals: Major Diversified\tAMEX:XLB\nE\tChemicals: Specialty\tAMEX:XLB\nE\tAlternative Power Generation\tNASDAQ:ICLN\nE\tEnvironmental Services\tNASDAQ:ICLN\nE\tApparel/Footwear\tAMEX:XRT\nE\tApparel/Footwear Retail\tAMEX:XRT\nE\tConsumer Sundries\tAMEX:XLY\nE\tElectronics/Appliances\tAMEX:XLY\nE\tHotels/Resorts/Cruise Lines\tAMEX:PEJ\nE\tHousehold/Personal Care\tAMEX:XLP\nE\tRecreational Products\tAMEX:XLY\nE\tCoal\tAMEX:XLE\nE\tContract Drilling\tAMEX:OIH\nE\tGas Distributors\tAMEX:XLE\nE\tIntegrated Oil\tAMEX:XLE\nE\tOil & Gas Production\tAMEX:XOP\nE\tOil & Gas Pipelines\tAMEX:MLPA\nE\tOil Refining/Marketing\tAMEX:XLE\nE\tOil Equipment & Services\tAMEX:OIH\nE\tInsurance Brokers/Services\tAMEX:KIE\nE\tLife/Health Insurance\tAMEX:KIE\nE\tMulti-Line Insurance\tAMEX:KIE\nE\tPrecious Metals\tAMEX:GDX\nE\tHospital/Nursing Management\tAMEX:XLV\nE\tManaged Health Care\tAMEX:XLV\nE\tMedical Distributors\tAMEX:XLV\nE\tMedical Specialties\tAMEX:IHI\nE\tMedical/Nursing Services\tAMEX:XLV\nE\tAir Freight/Couriers\tAMEX:IYT\nE\tCommercial Printing/Forms\tAMEX:XLI\nE\tContainers/Packaging\tAMEX:XLI\nE\tElectrical Products\tAMEX:XLI\nE\tEngineering & Construction\tAMEX:PAVE\nE\tIndustrial Conglomerates\tAMEX:XLI\nE\tIndustrial Machinery\tAMEX:XLI\nE\tIndustrial Specialties\tAMEX:XLI\nE\tMiscellaneous Commercial Services\tAMEX:XLI\nE\tMiscellaneous Manufacturing\tAMEX:XLI\nE\tInternet Retail\tAMEX:IBUY\nE\tInternet Software/Services\tAMEX:FDN\nE\tAluminum\tAMEX:XME\nE\tMetal Fabrication\tAMEX:XME\nE\tSteel\tAMEX:SLX\nE\tPharmaceuticals: Major\tAMEX:XLV\nE\tPharmaceuticals: Other\tAMEX:XPH\nE\tReal Estate Development\tAMEX:VNQ\nE\tReal Estate Investment Trusts\tAMEX:VNQ\nE\tReal Estate Management/Services\tAMEX:VNQ\nE\tRestaurants\tAMEX:PBJ\nE\tCatalog/Specialty Distribution\tAMEX:XRT\nE\tDepartment Stores\tAMEX:XRT\nE\tDiscount Stores\tAMEX:XRT\nE\tDrugstore Chains\tAMEX:XRT\nE\tElectronics/Appliance Stores\tAMEX:XRT\nE\tRetail: Apparel/Footwear\tAMEX:XRT\nE\tRetail: Computer/Electronics\tAMEX:XRT\nE\tRetail: Discount\tAMEX:XRT\nE\tRetail: Drugstore\tAMEX:XRT\nE\tRetail: General\tAMEX:XRT\nE\tRetail: Grocery\tAMEX:XRT\nE\tRetail: Specialty\tAMEX:XRT\nE\tSpecialty Stores\tAMEX:XRT\nE\tSemiconductors\tNASDAQ:SMH\nE\tElectronic Production Equipment\tNASDAQ:SMH\nE\tPackaged Software\tAMEX:IGV\nE\tComputer Communications\tAMEX:XLK\nE\tComputer Peripherals\tAMEX:XLK\nE\tComputer Processing Hardware\tAMEX:XLK\nE\tData Processing Services\tAMEX:XLK\nE\tElectronic Components\tAMEX:XLK\nE\tElectronic Equipment/Instruments\tAMEX:XLK\nE\tElectronics Distributors\tAMEX:XLK\nE\tInformation Technology Services\tAMEX:XLK\nE\tOffice Equipment/Supplies\tAMEX:XLK\nE\tMajor Telecommunications\tAMEX:XLC\nE\tSpecialty Telecommunications\tAMEX:XLC\nE\tWireless Telecommunications\tAMEX:XLC\nE\tTextiles\tAMEX:XRT\nE\tForest Products\tNASDAQ:WOOD\nE\tPaper/Forest Products\tNASDAQ:WOOD\nE\tTobacco\tAMEX:XLP\nE\tMarine Shipping\tAMEX:BOAT\nE\tTransportation Infrastructure\tAMEX:IYT\nE\tTrucking\tAMEX:IYT\nE\tUranium\tAMEX:URA\nE\tElectric Utilities\tAMEX:XLU\nE\tUtilities: Electric\tAMEX:XLU\nE\tUtilities: Gas\tAMEX:XLU"
+string indEtfTable1 = "\nE\tUtilities: Water\tAMEX:PHO\nE\tMiscellaneous\tAMEX:VTI"
+string indEtfHit = findList(indEtfTable0, "E", syminfo.industry)
+if indEtfHit == ""
+    indEtfHit := findList(indEtfTable1, "E", syminfo.industry)
+industryETF = indEtfHit == "" ? na : indEtfHit
     
 // 4. Fetch Data
 [sectorClose, industryClose, benchmarkClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close, ignore_invalid_symbol=true), request.security(industryETF, "D", close, ignore_invalid_symbol=true), request.security("SPY", "D", close, ignore_invalid_symbol=true)])
@@ -471,14 +271,14 @@ indRS = calc_rel(industryClose, benchmarkClose)
 // D2. RS Rating vs Sector ETF
 perfSector = 0.4 * calc_roc(sectorClose, 63) + 0.2 * calc_roc(sectorClose, 126) + 0.2 * calc_roc(sectorClose, 189) + 0.2 * calc_roc(sectorClose, 252)
 rsSectorScore = perfSector != 0 ? perfStock / perfSector * 100 : 0
-rsSectorRating = rsSectorScore >= 120 ? 99 : rsSectorScore >= 110 ? 90 : rsSectorScore >= 100 ? 80 : rsSectorScore >= 95 ? 70 : rsSectorScore >= 90 ? 60 : rsSectorScore >= 85 ? 50 : rsSectorScore >= 75 ? 40 : rsSectorScore >= 65 ? 30 : rsSectorScore >= 55 ? 20 : rsSectorScore >= 45 ? 10 : 1
+rsSectorRating = rsBucket(rsSectorScore)
 isSectorRSWeak = rsSectorRating < 65
 isSectorRSStrong = rsSectorRating >= 80
 
 // D3. RS Rating vs Industry ETF
 perfIndustry = 0.4 * calc_roc(industryClose, 63) + 0.2 * calc_roc(industryClose, 126) + 0.2 * calc_roc(industryClose, 189) + 0.2 * calc_roc(industryClose, 252)
 rsIndustryScore = perfIndustry != 0 ? perfStock / perfIndustry * 100 : 0
-rsIndustryRating = rsIndustryScore >= 120 ? 99 : rsIndustryScore >= 110 ? 90 : rsIndustryScore >= 100 ? 80 : rsIndustryScore >= 95 ? 70 : rsIndustryScore >= 90 ? 60 : rsIndustryScore >= 85 ? 50 : rsIndustryScore >= 75 ? 40 : rsIndustryScore >= 65 ? 30 : rsIndustryScore >= 55 ? 20 : rsIndustryScore >= 45 ? 10 : 1
+rsIndustryRating = rsBucket(rsIndustryScore)
 isIndustryRSWeak = rsIndustryRating < 65
 isIndustryRSStrong = rsIndustryRating >= 80
 
@@ -495,162 +295,14 @@ indTicker = na(industryETF) ? "" : getTicker(industryETF)
 
 
 // --- H. Trailing P/E vs same-category stocks (本益比) ---
-// Pine cannot list every symbol in an industry. The basket is the largest US primary
-// common stocks over $1B in the same TradingView industry, or the same sector when
-// that industry has fewer than two listed names. Membership snapshot: 2026-10-13.
+// Pine cannot list every symbol in an industry. Each basket stores the four largest
+// names. TWSE and TPEX use Taiwan. Every other chart uses the US list, names over $1B.
+// Sector is the fallback when the industry basket is missing. Snapshot: 2026-10-13.
 // The multiple is live: daily close / trailing twelve-month EPS.
 // Peers with no earnings or a TTM P/E above 100 are left out of the median so a
 // one-off earnings collapse does not set the category multiple.
 // Cheap (green): stock P/E at least 15% below the category median.
 // Rich (red): stock P/E at least 50% above the category median.
-peerBaskets() =>
-    string ind = switch syminfo.industry
-        "Advertising/Marketing Services" => "NYSE:OMC,NASDAQ:PTRN,NASDAQ:DJT,NASDAQ:SBET,NYSE:CCO"
-        "Aerospace & Defense" => "NYSE:GE,NYSE:RTX,NYSE:BA,NYSE:LMT,NYSE:GD,NYSE:HWM,NYSE:NOC,NYSE:TDG"
-        "Agricultural Commodities/Milling" => "NYSE:ADM,NYSE:BG,NYSE:CTVA,NASDAQ:PPC,AMEX:SEB,NASDAQ:CALM,NYSE:TRLV,NYSE:AGRO"
-        "Air Freight/Couriers" => "NASDAQ:DASH,NYSE:UPS,NYSE:FDX,NYSE:EXPD,NASDAQ:CHRW,NASDAQ:GRAB,NASDAQ:CART,NYSE:R"
-        "Airlines" => "NYSE:DAL,NASDAQ:UAL,NYSE:LUV,NASDAQ:AAL,NYSE:CPA,NYSE:ALK,NASDAQ:SKYW,NASDAQ:ALGT"
-        "Alternative Power Generation" => "NYSE:BIP,NASDAQ:TLN,NASDAQ:FRVO,NASDAQ:RNW,NYSE:XIFR"
-        "Aluminum" => "NYSE:AA,NASDAQ:CENX,NYSE:CSTM,NASDAQ:KALU"
-        "Apparel/Footwear" => "NYSE:NKE,NYSE:RL,NYSE:ONON,NYSE:DECK,NASDAQ:LULU,NYSE:LEVI,NYSE:VFC,NYSE:BIRK"
-        "Apparel/Footwear Retail" => "NYSE:TJX,NASDAQ:ROST,NYSE:TPR,NYSE:BURL,NYSE:GAP,NASDAQ:URBN,NYSE:VSXY,NYSE:ANF"
-        "Auto Parts: OEM" => "NYSE:ITW,NYSE:CMI,NYSE:ITT,NYSE:DCI,NYSE:ALSN,NYSE:ALV,NYSE:LEA,NASDAQ:GTX"
-        "Automotive Aftermarket" => "NASDAQ:LKQ,NASDAQ:DORM,NASDAQ:GT,NASDAQ:XPEL"
-        "Beverages: Alcoholic" => "NYSE:STZ,NYSE:BF.B,NYSE:TAP,NYSE:SAM"
-        "Beverages: Non-Alcoholic" => "NYSE:KO,NASDAQ:MNST,NASDAQ:CCEP,NASDAQ:KDP,NASDAQ:COKE,NASDAQ:CELH,NYSE:PRMB,NASDAQ:FIZZ"
-        "Biotechnology" => "NASDAQ:AMGN,NASDAQ:GILD,NASDAQ:MRNA,NASDAQ:NTRA,NYSE:IQV,NASDAQ:UTHR,NASDAQ:NBIX,NASDAQ:SMMT"
-        "Broadcasting" => "NASDAQ:FOX,NASDAQ:SIRI,NASDAQ:NXST,NYSE:NMAX"
-        "Building Products" => "NYSE:MAS,NYSE:CSL,NYSE:WSO,NYSE:SPXC,NYSE:AOS,NYSE:MHK,NYSE:SSD,NYSE:FBIN"
-        "Cable/Satellite TV" => "NASDAQ:CMCSA,NASDAQ:CHTR,NYSE:SKYD,NASDAQ:VSNT"
-        "Casinos/Gaming" => "NYSE:LVS,NYSE:FLUT,NASDAQ:WYNN,NYSE:MGM,NASDAQ:CZR,NYSE:SGHC,NYSE:BYD,NYSE:RSI"
-        "Chemicals: Agricultural" => "NYSE:CF,NYSE:MOS,NYSE:SMG,NYSE:UAN,NYSE:FMC,NYSE:ODC"
-        "Chemicals: Major Diversified" => "NYSE:DD,NASDAQ:SOLS,NYSE:ESI,NYSE:PRM,NYSE:AVNT,NYSE:NGVT,NASDAQ:IOSP,NYSE:HUN"
-        "Chemicals: Specialty" => "NASDAQ:LIN,NYSE:ECL,NYSE:APD,NYSE:DOW,NYSE:LYB,NYSE:ALB,NYSE:NEU,NYSE:WLK"
-        "Coal" => "NYSE:HCC,NYSE:CNR,NASDAQ:ARLP,NYSE:BTU,NYSE:AMR,NYSE:NRP"
-        "Commercial Printing/Forms" => "NASDAQ:WMG,NASDAQ:CMPR,NYSE:DLX"
-        "Computer Peripherals" => "NYSE:ANET,NASDAQ:SNDK,NASDAQ:STX,NASDAQ:WDC,NYSE:P,NASDAQ:NTAP,NASDAQ:EXTR,NASDAQ:QMCO"
-        "Computer Processing Hardware" => "NYSE:DELL,NYSE:HPE,NASDAQ:SMCI,NASDAQ:ZBRA,NYSE:IONQ,NASDAQ:QNT,NASDAQ:QBTS,NASDAQ:RGTI"
-        "Construction Materials" => "NYSE:CRH,NYSE:MLM,NYSE:VMC,NYSE:AMRZ,NYSE:JHX,NYSE:ACA,NYSE:EXP,NASDAQ:USLM"
-        "Containers/Packaging" => "NYSE:SW,NYSE:PKG,NYSE:AMCR,NYSE:BALL,NYSE:CCK,NYSE:OC,NYSE:ATR,NYSE:SON"
-        "Contract Drilling" => "NYSE:SLB,NASDAQ:BKR,NYSE:NE,NYSE:RIG,NYSE:VAL,NYSE:HP,NYSE:SDRL,NYSE:BORR"
-        "Data Processing Services" => "NASDAQ:PAYX,NASDAQ:VRSK,NASDAQ:NTNX,NYSE:J,NASDAQ:AKAM,NYSE:TYL,NASDAQ:IREN,NYSE:GDDY"
-        "Department Stores" => "AMEX:DDS,NYSE:M,NASDAQ:OLLI,NYSE:KSS"
-        "Discount Stores" => "NYSE:DG,NASDAQ:DLTR,NASDAQ:FIVE"
-        "Drugstore Chains" => "NYSE:CVS,NYSE:GRDN"
-        "Electric Utilities" => "NYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK,NASDAQ:AEP,NYSE:D,NYSE:VST,NYSE:ETR"
-        "Electrical Products" => "NYSE:GEV,NYSE:ETN,NASDAQ:LITE,NYSE:AME,NYSE:ROK,NYSE:HUBB,NASDAQ:INIO,NYSE:GNRC"
-        "Electronic Components" => "NYSE:APH,NYSE:GLW,NYSE:NVT,NASDAQ:VICR,NASDAQ:TTMI,NASDAQ:CAMT,NASDAQ:BELFA,NYSE:KN"
-        "Electronic Equipment/Instruments" => "NYSE:EMR,NYSE:KEYS,NYSE:Q,NYSE:FTV,NYSE:ONTO,NASDAQ:NXT,NASDAQ:NVMI,NASDAQ:CGNX"
-        "Electronic Production Equipment" => "NYSE:VRT,NYSE:BE,NASDAQ:TER,NASDAQ:FLEX,NASDAQ:SANM,NASDAQ:AEIS,NASDAQ:LFUS,NASDAQ:PLXS"
-        "Electronics Distributors" => "NYSE:SNX,NYSE:ARW,NASDAQ:AVT,NYSE:REZI,NASDAQ:SCSC"
-        "Electronics/Appliance Stores" => "NYSE:BBY,NYSE:GME,NASDAQ:PLBL"
-        "Electronics/Appliances" => "NYSE:SN,NYSE:IMAX,NASDAQ:SONO,NYSE:WHR,NYSE:SPB"
-        "Engineering & Construction" => "NYSE:PWR,NYSE:FIX,NYSE:EME,NYSE:OTIS,NYSE:APG,NYSE:MTZ,NASDAQ:STRL,NASDAQ:IESC"
-        "Environmental Services" => "NYSE:WM,NYSE:RSG,NYSE:GFL,NYSE:CLH,NASDAQ:CWST"
-        "Finance/Rental/Leasing" => "NYSE:V,NYSE:MA,NYSE:AXP,NYSE:URI,NYSE:SUNB,NYSE:RKT,NASDAQ:AFRM,NYSE:SYF"
-        "Financial Conglomerates" => "NYSE:BMNR,NASDAQ:ARCC,NYSE:MAIN,NYSE:OBDC,NASDAQ:GBDC,NASDAQ:PURR,NASDAQ:ASST,NASDAQ:KYIV"
-        "Financial Publishing/Services" => "NYSE:SPGI,NYSE:MCO,NYSE:MSCI,NYSE:EFX,NYSE:FICO,NYSE:TRU,NYSE:FDS,NASDAQ:MORN"
-        "Food Distributors" => "NYSE:SYY,NYSE:USFD,NASDAQ:CHEF,NYSE:UNFI,NYSE:DOLE"
-        "Food Retail" => "NYSE:KR,NYSE:TBBB,NYSE:ACI,NASDAQ:SFM,NYSE:WMK,NASDAQ:IMKTA,NASDAQ:YSWY,NASDAQ:GO"
-        "Food: Major Diversified" => "NYSE:KHC,NYSE:GIS,NYSE:CAG,NYSE:HLF"
-        "Food: Meat/Fish/Dairy" => "NYSE:TSN,NYSE:JBS,NYSE:HRL,NASDAQ:SFD"
-        "Food: Specialty/Candy" => "NASDAQ:PEP,NASDAQ:MDLZ,NYSE:HSY,NYSE:IFF,NYSE:SJM,NYSE:MKC,NYSE:DAR,NYSE:LW"
-        "Forest Products" => "NYSE:LPX,NYSE:TREX,NASDAQ:UFPI"
-        "Gas Distributors" => "NYSE:TRGP,NYSE:SRE,NYSE:CQP,NYSE:ATO,NYSE:NI,NYSE:SWX,NYSE:BKH,NYSE:NJR"
-        "Home Furnishings" => "NYSE:SGI,NASDAQ:PATK,NASDAQ:ARHS,NYSE:MBC,NYSE:LZB"
-        "Home Improvement Chains" => "NYSE:HD,NYSE:LOW,NYSE:BLDR,NYSE:FND"
-        "Homebuilding" => "NYSE:DHI,NYSE:PHM,NYSE:LEN,NYSE:NVR,NYSE:TOL,NASDAQ:FTDR,NYSE:SKY,NASDAQ:CVCO"
-        "Hospital/Nursing Management" => "NYSE:HCA,NYSE:THC,NYSE:UHS,NYSE:PACS,NYSE:CHE,AMEX:NHC,NYSE:BKD,NASDAQ:SGRY"
-        "Hotels/Resorts/Cruise lines" => "NASDAQ:ABNB,NASDAQ:MAR,NYSE:RCL,NYSE:HLT,NYSE:VIK,NYSE:CCL,NYSE:H,NYSE:NCLH"
-        "Household/Personal Care" => "NYSE:PG,NYSE:CL,NYSE:EL,NYSE:KVUE,NASDAQ:KMB,NYSE:CHD,NYSE:CLX,NYSE:ELF"
-        "Industrial Conglomerates" => "NYSE:MMM,NASDAQ:AIIR"
-        "Industrial Machinery" => "NASDAQ:AMAT,NASDAQ:LRCX,NYSE:PH,NYSE:TT,NYSE:JCI,NASDAQ:HON,NYSE:CARR,NYSE:JBL"
-        "Industrial Specialties" => "NYSE:SHW,NYSE:PPG,NYSE:RPM,NYSE:AXTA,NYSE:CSW,NYSE:AZZ,NASDAQ:WDFC,NYSE:FUL"
-        "Information Technology Services" => "NYSE:IBM,NASDAQ:FTNT,NYSE:ACN,NYSE:NET,NASDAQ:WDAY,NASDAQ:CRDO,NYSE:HPQ,NASDAQ:CTSH"
-        "Insurance Brokers/Services" => "NYSE:MRSH,NYSE:AJG,NYSE:AON,NASDAQ:WTW,NYSE:BRO,NYSE:RYAN,NASDAQ:BWIN,NYSE:NP"
-        "Integrated Oil" => "NYSE:XOM,NYSE:CVX,NYSE:EOG,NYSE:OXY,NYSE:OKE,NYSE:DVN,NYSE:EQT,NASDAQ:EXE"
-        "Internet Retail" => "NASDAQ:AMZN,NASDAQ:MELI,NASDAQ:EBAY,NYSE:CPNG,NYSE:CHWY,NYSE:ETSY,NASDAQ:GLBE,NYSE:GIC"
-        "Internet Software/Services" => "NASDAQ:GOOG,NASDAQ:META,NASDAQ:NFLX,NYSE:SPOT,NASDAQ:MSTR,NYSE:RDDT,NASDAQ:VRSN,NASDAQ:FWONA"
-        "Investment Banks/Brokers" => "NYSE:GS,NYSE:SCHW,NASDAQ:IBKR,NASDAQ:CME,NASDAQ:HOOD,NYSE:BNY,NYSE:ICE,NASDAQ:NDAQ"
-        "Investment Managers" => "NYSE:MS,NYSE:BLK,NYSE:BX,NYSE:BN,NYSE:KKR,NYSE:BAM,NYSE:APO,NYSE:AMP"
-        "Investment Trusts/Mutual Funds" => "NYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS,NYSE:BSM,NYSE:FSK,NYSE:KRP,NYSE:PBT"
-        "Life/Health Insurance" => "NYSE:PRU,NYSE:RGA,NYSE:CRBG,NYSE:EQH,NYSE:JXN,NYSE:VOYA,NYSE:PRI,OTC:OICT"
-        "Major Banks" => "NYSE:JPM,NYSE:BAC,NYSE:WFC,NYSE:C,NYSE:COF,NYSE:USB,NYSE:PNC,NASDAQ:HBAN"
-        "Major Telecommunications" => "NASDAQ:LUMN,NASDAQ:LBTYA,NYSE:IDT,NASDAQ:UNIT,NASDAQ:LILA"
-        "Managed Health Care" => "NYSE:UNH,NYSE:ELV,NYSE:CI,NYSE:HUM,NYSE:CNC,NYSE:MOH,NYSE:OSCR,NASDAQ:ALHC"
-        "Marine Shipping" => "NYSE:FRO,NYSE:KEX,NYSE:MATX,NYSE:INSW,NYSE:STNG,NYSE:TDW,NYSE:DHT,NYSE:ECO"
-        "Medical Distributors" => "NYSE:MCK,NYSE:COR,NYSE:CAH,NASDAQ:HSIC"
-        "Medical Specialties" => "NYSE:TMO,NYSE:ABT,NYSE:DHR,NASDAQ:ISRG,NYSE:MDT,NYSE:SYK,NYSE:BSX,NYSE:BDX"
-        "Medical/Nursing Services" => "NYSE:LH,NYSE:SOLV,NASDAQ:BTSG,NYSE:EHC,NYSE:DVA,NASDAQ:ENSG,NYSE:HIMS,NASDAQ:RDNT"
-        "Metal Fabrication" => "NYSE:RBC,NYSE:MLI,NYSE:VMI,NASDAQ:USAR,NASDAQ:ROCK"
-        "Miscellaneous Commercial Services" => "NASDAQ:SHOP,NASDAQ:CTAS,NYSE:VYLR,NASDAQ:PYPL,NYSE:XYZ,NYSE:CPAY,NASDAQ:FISV,NASDAQ:MEDP"
-        "Miscellaneous Manufacturing" => "NYSE:WMS,NYSE:AWI,NYSE:BRC,NYSE:YETI,NYSE:LCII,NYSE:MYE"
-        "Motor Vehicles" => "NASDAQ:TSLA,NYSE:GM,NYSE:F,NASDAQ:RIVN,NYSE:OSK,NASDAQ:VFS,NYSE:FSS,NYSE:HOG"
-        "Movies/Entertainment" => "NYSE:DIS,NYSE:LYV,NYSE:TKO,NASDAQ:DKNG,NYSE:MSGS,NASDAQ:LLYVA,NASDAQ:CHDN,NYSE:CNK"
-        "Multi-Line Insurance" => "NYSE:PGR,NYSE:MET,NYSE:ALL,NYSE:AFL,NYSE:AIG,NASDAQ:ACGL,NYSE:WRB,NASDAQ:CINF"
-        "Office Equipment/Supplies" => "NYSE:HNI,NASDAQ:MLKN"
-        "Oil & Gas Pipelines" => "NYSE:WMB,NYSE:EPD,NYSE:KMI,AMEX:ET,NYSE:LNG,NYSE:MPLX,NYSE:VG,NYSE:WES"
-        "Oil & Gas Production" => "NYSE:COP,NASDAQ:FANG,NYSE:AR,NYSE:RRC,NYSE:MGY,NYSE:MUR,NYSE:CNX,NASDAQ:PTEN"
-        "Oil Refining/Marketing" => "NYSE:MPC,NYSE:VLO,NYSE:PSX,NYSE:DINO,NYSE:PBF,NYSE:CVI,NASDAQ:CLMT,NYSE:DK"
-        "Oilfield Services/Equipment" => "NYSE:FTI,NYSE:HAL,NYSE:NOV,NYSE:SEI,NASDAQ:WFRD,NYSE:AROC,NYSE:KGS,NYSE:WHD"
-        "Other Consumer Services" => "NASDAQ:BKNG,NASDAQ:EXPE,NYSE:SCI,NYSE:LTH,NYSE:ANDG,NYSE:HRB,NYSE:GHC,NYSE:UNF"
-        "Other Metals/Minerals" => "NYSE:SCCO,NYSE:FCX,NYSE:ATI,NYSE:CRS,NYSE:MP,NASDAQ:AUGO,AMEX:UEC,NASDAQ:ALM"
-        "Other Transportation" => "NYSE:UBER,NYSE:PFGC,NYSE:SARO,NASDAQ:LYFT,NYSE:VNT,NYSE:CAAP"
-        "Packaged Software" => "NASDAQ:MSFT,NASDAQ:PLTR,NYSE:ORCL,NASDAQ:PANW,NASDAQ:CRWD,NYSE:CRM,NYSE:NOW,NYSE:SNOW"
-        "Personnel Services" => "NYSE:KFY,NYSE:RHI,NYSE:MAN,NYSE:AMN,NASDAQ:UPWK"
-        "Pharmaceuticals: Major" => "NYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK,NYSE:PFE,NASDAQ:VRTX,NYSE:BMY,NASDAQ:REGN"
-        "Precious Metals" => "NYSE:NEM,NYSE:AU,NASDAQ:RGLD,NYSE:CDE,AMEX:EQX,NYSE:HL,NASDAQ:SSRM,AMEX:NG"
-        "Property/Casualty Insurance" => "NYSE:BRK.B,NYSE:CB,NYSE:TRV,NYSE:HIG,NYSE:MKL,NYSE:L,NYSE:EG,NYSE:RNR"
-        "Publishing: Newspapers" => "NASDAQ:NWS,NYSE:NYT,NYSE:TDAY"
-        "Pulp & Paper" => "NYSE:IP,NYSE:AVY,NYSE:SLVM"
-        "Railroads" => "NYSE:UNP,NASDAQ:CSX,NYSE:NSC,NYSE:GATX"
-        "Real Estate Development" => "NYSE:CBRE,NYSE:JLL,NYSE:COMP,NYSE:HHH,NYSE:MTH,NYSE:JOE,NYSE:MRP,NYSE:EROK"
-        "Real Estate Investment Trusts" => "NYSE:WELL,NYSE:PLD,NASDAQ:EQIX,NYSE:AMT,NYSE:DLR,NYSE:SPG,NYSE:PSA,NYSE:O"
-        "Recreational Products" => "NYSE:AS,NASDAQ:HAS,NASDAQ:MAT,NYSE:GOLF,NYSE:THO,NYSE:PII,NYSE:CALY,NYSE:HAYW"
-        "Regional Banks" => "NYSE:NU,NYSE:TFC,NYSE:FITB,NYSE:MTB,NASDAQ:FCNCA,NASDAQ:EWBC,NYSE:PNFP,NYSE:FHN"
-        "Restaurants" => "NYSE:MCD,NASDAQ:SBUX,NYSE:YUM,NYSE:CMG,NYSE:QSR,NYSE:DRI,NYSE:YUMC,NYSE:ARMK"
-        "Savings Banks" => "NASDAQ:TFSL,NASDAQ:WSFS,NASDAQ:CLBK,NYSE:PFS,NASDAQ:NWBI,NASDAQ:OCFC,NYSE:TFIN,NASDAQ:CFFN"
-        "Semiconductors" => "NASDAQ:NVDA,NASDAQ:AVGO,NASDAQ:MU,NASDAQ:AMD,NASDAQ:INTC,NASDAQ:TXN,NASDAQ:KLAC,NASDAQ:MRVL"
-        "Services to the Health Industry" => "NYSE:DGX,NASDAQ:ASTH"
-        "Specialty Insurance" => "NYSE:FNF,NYSE:ORI,NYSE:FAF,NYSE:ESNT,NYSE:RDN,NYSE:AGO,NYSE:STC"
-        "Specialty Stores" => "NASDAQ:WMT,NASDAQ:COST,NASDAQ:ORLY,NYSE:TGT,NYSE:CVNA,NYSE:AZO,NYSE:WSM,NASDAQ:CPRT"
-        "Specialty Telecommunications" => "NASDAQ:SPCX,NASDAQ:ECHO,NASDAQ:ASTS,NASDAQ:IRDM,NASDAQ:ITRN"
-        "Steel" => "NYSE:NUE,NASDAQ:STLD,NYSE:RS,NYSE:CLF,NYSE:CMC,NYSE:WS,NYSE:RYZ"
-        "Telecommunications Equipment" => "NASDAQ:AAPL,NASDAQ:CSCO,NYSE:MSI,NYSE:CIEN,NYSE:GRMN,NYSE:UI,NASDAQ:VSAT,NASDAQ:ONDS"
-        "Tobacco" => "NYSE:PM,NYSE:MO,NYSE:TPB"
-        "Tools & Hardware" => "NYSE:SNA,NYSE:SWK,NYSE:ALLE"
-        "Trucking" => "NASDAQ:ODFL,NASDAQ:JBHT,NYSE:XPO,NYSE:FDXF,NYSE:KNX,NASDAQ:SAIA,NASDAQ:LSTR,NYSE:SNDR"
-        "Trucks/Construction/Farm Machinery" => "NYSE:CAT,NYSE:DE,NASDAQ:PCAR,NYSE:WAB,NYSE:CNH,NYSE:BWA,NYSE:TTC,NYSE:AGCO"
-        "Water Utilities" => "NYSE:AWK,NYSE:WTRG,NYSE:AWR,NYSE:CWT,NASDAQ:HTO,NASDAQ:MSEX"
-        "Wholesale Distributors" => "NYSE:GWW,NASDAQ:FAST,NYSE:FERG,NYSE:GPC,NYSE:WCC,AMEX:SUN,NYSE:AIT,NYSE:QXO"
-        "Wireless Telecommunications" => "NYSE:VZ,NASDAQ:TMUS,NYSE:T,NASDAQ:TIGO,NASDAQ:GSAT,NYSE:TDS,NYSE:AD,NASDAQ:ATEX"
-        => ""
-    string sec = switch syminfo.sector
-        "Commercial Services" => "NASDAQ:SHOP,NYSE:SPGI,NASDAQ:CTAS,NYSE:MCO,NYSE:VYLR,NASDAQ:PYPL,NYSE:XYZ,NYSE:MSCI"
-        "Communications" => "NASDAQ:SPCX,NYSE:VZ,NASDAQ:TMUS,NYSE:T,NASDAQ:ECHO,NASDAQ:ASTS,NASDAQ:TIGO,NASDAQ:GSAT"
-        "Consumer Durables" => "NASDAQ:TSLA,NYSE:GM,NYSE:F,NYSE:DHI,NYSE:SN,NYSE:PHM,NASDAQ:RIVN,NYSE:SNA"
-        "Consumer Non-Durables" => "NYSE:KO,NYSE:PG,NYSE:PM,NASDAQ:PEP,NYSE:MO,NASDAQ:MNST,NASDAQ:MDLZ,NYSE:CL"
-        "Consumer Services" => "NYSE:DIS,NYSE:MCD,NASDAQ:BKNG,NASDAQ:SBUX,NASDAQ:ABNB,NASDAQ:MAR,NYSE:RCL,NYSE:HLT"
-        "Distribution Services" => "NYSE:MCK,NYSE:COR,NYSE:GWW,NASDAQ:FAST,NYSE:CAH,NYSE:FERG,NYSE:SYY,NYSE:SNX"
-        "Electronic Technology" => "NASDAQ:NVDA,NASDAQ:AAPL,NASDAQ:AVGO,NASDAQ:MU,NASDAQ:AMD,NASDAQ:INTC,NASDAQ:CSCO,NYSE:DELL"
-        "Energy Minerals" => "NYSE:XOM,NYSE:CVX,NYSE:COP,NYSE:MPC,NYSE:VLO,NYSE:PSX,NYSE:EOG,NYSE:OXY"
-        "Finance" => "NYSE:BRK.B,NYSE:JPM,NYSE:V,NYSE:MA,NYSE:BAC,NYSE:MS,NYSE:GS,NYSE:WFC"
-        "Health Services" => "NYSE:UNH,NYSE:HCA,NYSE:ELV,NYSE:CI,NYSE:HUM,NYSE:CNC,NYSE:DGX,NYSE:LH"
-        "Health Technology" => "NYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK,NYSE:TMO,NASDAQ:AMGN,NASDAQ:GILD,NYSE:ABT"
-        "Industrial Services" => "NYSE:PWR,NYSE:WMB,NYSE:WM,NYSE:EPD,NYSE:KMI,NYSE:SLB,AMEX:ET,NYSE:RSG"
-        "Miscellaneous" => "NYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS,NYSE:BSM,NYSE:FSK,NYSE:KRP,NYSE:PBT"
-        "Non-Energy Minerals" => "NYSE:SCCO,NYSE:NEM,NYSE:FCX,NYSE:NUE,NYSE:CRH,NYSE:AU,NASDAQ:STLD,NYSE:MLM"
-        "Process Industries" => "NASDAQ:LIN,NYSE:ECL,NYSE:SHW,NYSE:APD,NYSE:ADM,NYSE:PPG,NYSE:SW,NYSE:DOW"
-        "Producer Manufacturing" => "NASDAQ:AMAT,NASDAQ:LRCX,NYSE:CAT,NYSE:GEV,NYSE:DE,NYSE:ETN,NYSE:PH,NYSE:TT"
-        "Retail Trade" => "NASDAQ:AMZN,NASDAQ:WMT,NASDAQ:COST,NYSE:HD,NYSE:TJX,NYSE:CVS,NYSE:LOW,NASDAQ:MELI"
-        "Technology Services" => "NASDAQ:GOOG,NASDAQ:MSFT,NASDAQ:META,NASDAQ:PLTR,NYSE:ORCL,NASDAQ:PANW,NASDAQ:NFLX,NASDAQ:CRWD"
-        "Transportation" => "NYSE:UNP,NYSE:UBER,NASDAQ:CSX,NASDAQ:DASH,NYSE:UPS,NYSE:NSC,NYSE:FDX,NYSE:DAL"
-        "Utilities" => "NYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK,NASDAQ:AEP,NYSE:TRGP,NYSE:D,NYSE:SRE"
-        => ""
-    string raw = ind != "" ? ind : sec
-    string srcName = ind != "" ? "Ind" : sec != "" ? "Sec" : ""
-    [raw, srcName]
-
 tickerAt(string raw, int idx) =>
     string out = ""
     if raw != ""
@@ -661,8 +313,20 @@ tickerAt(string raw, int idx) =>
 
 // Empty slots reuse SPY. Identical requests are cached, and SPY has no EPS so it
 // cannot enter the median.
-peerClose(string tk) =>
-    request.security(tk == "" ? "AMEX:SPY" : tk, "D", close, ignore_invalid_symbol=true)
+// Daily lookbacks stay inside request.security. Indexing that result on the
+// chart keeps a 20-bar buffer, and offset 126 then throws (COCO peer basket).
+peerStats(string tk) =>
+    string sym = tk == "" ? "AMEX:SPY" : tk
+    [px, c20, c63, c126, c189, c252] = request.security(sym, "D", [close, close[20], close[63], close[126], close[189], close[252]], ignore_invalid_symbol=true)
+    bool isSelf = tk != "" and (tk == syminfo.tickerid or str.endswith(tk, ":" + syminfo.ticker))
+    bool ok = tk != "" and not isSelf and not na(px)
+    float r20 = ok and not na(c20) and c20 != 0 ? px / c20 - 1 : na
+    float r63 = ok and not na(c63) and c63 != 0 ? px / c63 : na
+    float r126 = ok and not na(c126) and c126 != 0 ? px / c126 : na
+    float r189 = ok and not na(c189) and c189 != 0 ? px / c189 : na
+    float r252 = ok and not na(c252) and c252 != 0 ? px / c252 : na
+    float wp = not na(r63) and not na(r126) and not na(r189) and not na(r252) ? 0.4 * r63 + 0.2 * r126 + 0.2 * r189 + 0.2 * r252 : na
+    [px, r20, wp]
 
 peerEarn(string tk) =>
     request.financial(tk == "" ? "AMEX:SPY" : tk, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)
@@ -673,6 +337,46 @@ keptPE(string tk, float px, float e) =>
     float pe = not isSelf and not na(px) and not na(e) and e > 0 ? px / e : na
     pe > 0 and pe <= 100 ? pe : na
 
+// Peer baskets. Taiwan listings use Taiwan names. Every other chart uses the US names.
+// Four largest primary stocks in the same industry, or the same sector when that industry is missing.
+// US names are over $1B. Snapshot: 2026-10-13. Each string stays within 4096 characters.
+string usPeer0 = "\nI\tAdvertising/Marketing Services\tNYSE:OMC,NASDAQ:PTRN,NASDAQ:DJT,NASDAQ:SBET\nI\tAerospace & Defense\tNYSE:GE,NYSE:RTX,NYSE:BA,NYSE:LMT\nI\tAgricultural Commodities/Milling\tNYSE:ADM,NYSE:BG,NYSE:CTVA,NASDAQ:PPC\nI\tAir Freight/Couriers\tNASDAQ:DASH,NYSE:UPS,NYSE:FDX,NYSE:EXPD\nI\tAirlines\tNYSE:DAL,NASDAQ:UAL,NYSE:LUV,NASDAQ:AAL\nI\tAlternative Power Generation\tNYSE:BIP,NASDAQ:TLN,NASDAQ:FRVO,NASDAQ:RNW\nI\tAluminum\tNYSE:AA,NASDAQ:CENX,NYSE:CSTM,NASDAQ:KALU\nI\tApparel/Footwear\tNYSE:NKE,NYSE:RL,NYSE:ONON,NYSE:DECK\nI\tApparel/Footwear Retail\tNYSE:TJX,NASDAQ:ROST,NYSE:TPR,NYSE:BURL\nI\tAuto Parts: OEM\tNYSE:ITW,NYSE:CMI,NYSE:ITT,NYSE:DCI\nI\tAutomotive Aftermarket\tNASDAQ:LKQ,NASDAQ:DORM,NASDAQ:GT,NASDAQ:XPEL\nI\tBeverages: Alcoholic\tNYSE:STZ,NYSE:BF.B,NYSE:TAP,NYSE:SAM\nI\tBeverages: Non-Alcoholic\tNYSE:KO,NASDAQ:MNST,NASDAQ:CCEP,NASDAQ:KDP\nI\tBiotechnology\tNASDAQ:AMGN,NASDAQ:GILD,NASDAQ:MRNA,NASDAQ:NTRA\nI\tBroadcasting\tNASDAQ:FOX,NASDAQ:SIRI,NASDAQ:NXST,NYSE:NMAX\nI\tBuilding Products\tNYSE:MAS,NYSE:CSL,NYSE:WSO,NYSE:SPXC\nI\tCable/Satellite TV\tNASDAQ:CMCSA,NASDAQ:CHTR,NYSE:SKYD,NASDAQ:VSNT\nI\tCasinos/Gaming\tNYSE:LVS,NYSE:FLUT,NASDAQ:WYNN,NYSE:MGM\nI\tChemicals: Agricultural\tNYSE:CF,NYSE:MOS,NYSE:SMG,NYSE:UAN\nI\tChemicals: Major Diversified\tNYSE:DD,NASDAQ:SOLS,NYSE:ESI,NYSE:PRM\nI\tChemicals: Specialty\tNASDAQ:LIN,NYSE:ECL,NYSE:APD,NYSE:DOW\nI\tCoal\tNYSE:HCC,NYSE:CNR,NASDAQ:ARLP,NYSE:BTU\nI\tCommercial Printing/Forms\tNASDAQ:WMG,NASDAQ:CMPR,NYSE:DLX\nI\tComputer Peripherals\tNYSE:ANET,NASDAQ:SNDK,NASDAQ:STX,NASDAQ:WDC\nI\tComputer Processing Hardware\tNYSE:DELL,NYSE:HPE,NASDAQ:SMCI,NASDAQ:ZBRA\nI\tConstruction Materials\tNYSE:CRH,NYSE:MLM,NYSE:VMC,NYSE:AMRZ\nI\tContainers/Packaging\tNYSE:SW,NYSE:PKG,NYSE:AMCR,NYSE:BALL\nI\tContract Drilling\tNYSE:SLB,NASDAQ:BKR,NYSE:NE,NYSE:RIG\nI\tData Processing Services\tNASDAQ:PAYX,NASDAQ:VRSK,NASDAQ:NTNX,NYSE:J\nI\tDepartment Stores\tAMEX:DDS,NYSE:M,NASDAQ:OLLI,NYSE:KSS\nI\tDiscount Stores\tNYSE:DG,NASDAQ:DLTR,NASDAQ:FIVE\nI\tDrugstore Chains\tNYSE:CVS,NYSE:GRDN\nI\tElectric Utilities\tNYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK\nI\tElectrical Products\tNYSE:GEV,NYSE:ETN,NASDAQ:LITE,NYSE:AME\nI\tElectronic Components\tNYSE:APH,NYSE:GLW,NYSE:NVT,NASDAQ:VICR\nI\tElectronic Equipment/Instruments\tNYSE:EMR,NYSE:KEYS,NYSE:Q,NYSE:FTV\nI\tElectronic Production Equipment\tNYSE:VRT,NYSE:BE,NASDAQ:TER,NASDAQ:FLEX\nI\tElectronics Distributors\tNYSE:SNX,NYSE:ARW,NASDAQ:AVT,NYSE:REZI\nI\tElectronics/Appliance Stores\tNYSE:BBY,NYSE:GME,NASDAQ:PLBL\nI\tElectronics/Appliances\tNYSE:SN,NYSE:IMAX,NASDAQ:SONO,NYSE:WHR\nI\tEngineering & Construction\tNYSE:PWR,NYSE:FIX,NYSE:EME,NYSE:OTIS\nI\tEnvironmental Services\tNYSE:WM,NYSE:RSG,NYSE:GFL,NYSE:CLH\nI\tFinance/Rental/Leasing\tNYSE:V,NYSE:MA,NYSE:AXP,NYSE:URI\nI\tFinancial Conglomerates\tNYSE:BMNR,NASDAQ:ARCC,NYSE:MAIN,NYSE:OBDC\nI\tFinancial Publishing/Services\tNYSE:SPGI,NYSE:MCO,NYSE:MSCI,NYSE:EFX\nI\tFood Distributors\tNYSE:SYY,NYSE:USFD,NASDAQ:CHEF,NYSE:UNFI\nI\tFood Retail\tNYSE:KR,NYSE:TBBB,NYSE:ACI,NASDAQ:SFM\nI\tFood: Major Diversified\tNYSE:KHC,NYSE:GIS,NYSE:CAG,NYSE:HLF\nI\tFood: Meat/Fish/Dairy\tNYSE:TSN,NYSE:JBS,NYSE:HRL,NASDAQ:SFD\nI\tFood: Specialty/Candy\tNASDAQ:PEP,NASDAQ:MDLZ,NYSE:HSY,NYSE:IFF\nI\tForest Products\tNYSE:LPX,NYSE:TREX,NASDAQ:UFPI\nI\tGas Distributors\tNYSE:TRGP,NYSE:SRE,NYSE:CQP,NYSE:ATO\nI\tHome Furnishings\tNYSE:SGI,NASDAQ:PATK,NASDAQ:ARHS,NYSE:MBC\nI\tHome Improvement Chains\tNYSE:HD,NYSE:LOW,NYSE:BLDR,NYSE:FND\nI\tHomebuilding\tNYSE:DHI,NYSE:PHM,NYSE:LEN,NYSE:NVR\nI\tHospital/Nursing Management\tNYSE:HCA,NYSE:THC,NYSE:UHS,NYSE:PACS\nI\tHotels/Resorts/Cruise lines\tNASDAQ:ABNB,NASDAQ:MAR,NYSE:RCL,NYSE:HLT\nI\tHousehold/Personal Care\tNYSE:PG,NYSE:CL,NYSE:EL,NYSE:KVUE\nI\tIndustrial Conglomerates\tNYSE:MMM,NASDAQ:AIIR\nI\tIndustrial Machinery\tNASDAQ:AMAT,NASDAQ:LRCX,NYSE:PH,NYSE:TT\nI\tIndustrial Specialties\tNYSE:SHW,NYSE:PPG,NYSE:RPM,NYSE:AXTA\nI\tInformation Technology Services\tNYSE:IBM,NASDAQ:FTNT,NYSE:ACN,NYSE:NET\nI\tInsurance Brokers/Services\tNYSE:MRSH,NYSE:AJG,NYSE:AON,NASDAQ:WTW\nI\tIntegrated Oil\tNYSE:XOM,NYSE:CVX,NYSE:EOG,NYSE:OXY\nI\tInternet Retail\tNASDAQ:AMZN,NASDAQ:MELI,NASDAQ:EBAY,NYSE:CPNG\nI\tInternet Software/Services\tNASDAQ:GOOG,NASDAQ:META,NASDAQ:NFLX,NYSE:SPOT"
+string usPeer1 = "\nI\tInvestment Banks/Brokers\tNYSE:GS,NYSE:SCHW,NASDAQ:IBKR,NASDAQ:CME\nI\tInvestment Managers\tNYSE:MS,NYSE:BLK,NYSE:BX,NYSE:BN\nI\tInvestment Trusts/Mutual Funds\tNYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS\nI\tLife/Health Insurance\tNYSE:PRU,NYSE:RGA,NYSE:CRBG,NYSE:EQH\nI\tMajor Banks\tNYSE:JPM,NYSE:BAC,NYSE:WFC,NYSE:C\nI\tMajor Telecommunications\tNASDAQ:LUMN,NASDAQ:LBTYA,NYSE:IDT,NASDAQ:UNIT\nI\tManaged Health Care\tNYSE:UNH,NYSE:ELV,NYSE:CI,NYSE:HUM\nI\tMarine Shipping\tNYSE:FRO,NYSE:KEX,NYSE:MATX,NYSE:INSW\nI\tMedical Distributors\tNYSE:MCK,NYSE:COR,NYSE:CAH,NASDAQ:HSIC\nI\tMedical Specialties\tNYSE:TMO,NYSE:ABT,NYSE:DHR,NASDAQ:ISRG\nI\tMedical/Nursing Services\tNYSE:LH,NYSE:SOLV,NASDAQ:BTSG,NYSE:EHC\nI\tMetal Fabrication\tNYSE:RBC,NYSE:MLI,NYSE:VMI,NASDAQ:USAR\nI\tMiscellaneous Commercial Services\tNASDAQ:SHOP,NASDAQ:CTAS,NYSE:VYLR,NASDAQ:PYPL\nI\tMiscellaneous Manufacturing\tNYSE:WMS,NYSE:AWI,NYSE:BRC,NYSE:YETI\nI\tMotor Vehicles\tNASDAQ:TSLA,NYSE:GM,NYSE:F,NASDAQ:RIVN\nI\tMovies/Entertainment\tNYSE:DIS,NYSE:LYV,NYSE:TKO,NASDAQ:DKNG\nI\tMulti-Line Insurance\tNYSE:PGR,NYSE:MET,NYSE:ALL,NYSE:AFL\nI\tOffice Equipment/Supplies\tNYSE:HNI,NASDAQ:MLKN\nI\tOil & Gas Pipelines\tNYSE:WMB,NYSE:EPD,NYSE:KMI,AMEX:ET\nI\tOil & Gas Production\tNYSE:COP,NASDAQ:FANG,NYSE:AR,NYSE:RRC\nI\tOil Refining/Marketing\tNYSE:MPC,NYSE:VLO,NYSE:PSX,NYSE:DINO\nI\tOilfield Services/Equipment\tNYSE:FTI,NYSE:HAL,NYSE:NOV,NYSE:SEI\nI\tOther Consumer Services\tNASDAQ:BKNG,NASDAQ:EXPE,NYSE:SCI,NYSE:LTH\nI\tOther Metals/Minerals\tNYSE:SCCO,NYSE:FCX,NYSE:ATI,NYSE:CRS\nI\tOther Transportation\tNYSE:UBER,NYSE:PFGC,NYSE:SARO,NASDAQ:LYFT\nI\tPackaged Software\tNASDAQ:MSFT,NASDAQ:PLTR,NYSE:ORCL,NASDAQ:PANW\nI\tPersonnel Services\tNYSE:KFY,NYSE:RHI,NYSE:MAN,NYSE:AMN\nI\tPharmaceuticals: Major\tNYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK\nI\tPrecious Metals\tNYSE:NEM,NYSE:AU,NASDAQ:RGLD,NYSE:CDE\nI\tProperty/Casualty Insurance\tNYSE:BRK.B,NYSE:CB,NYSE:TRV,NYSE:HIG\nI\tPublishing: Newspapers\tNASDAQ:NWS,NYSE:NYT,NYSE:TDAY\nI\tPulp & Paper\tNYSE:IP,NYSE:AVY,NYSE:SLVM\nI\tRailroads\tNYSE:UNP,NASDAQ:CSX,NYSE:NSC,NYSE:GATX\nI\tReal Estate Development\tNYSE:CBRE,NYSE:JLL,NYSE:COMP,NYSE:HHH\nI\tReal Estate Investment Trusts\tNYSE:WELL,NYSE:PLD,NASDAQ:EQIX,NYSE:AMT\nI\tRecreational Products\tNYSE:AS,NASDAQ:HAS,NASDAQ:MAT,NYSE:GOLF\nI\tRegional Banks\tNYSE:NU,NYSE:TFC,NYSE:FITB,NYSE:MTB\nI\tRestaurants\tNYSE:MCD,NASDAQ:SBUX,NYSE:YUM,NYSE:CMG\nI\tSavings Banks\tNASDAQ:TFSL,NASDAQ:WSFS,NASDAQ:CLBK,NYSE:PFS\nI\tSemiconductors\tNASDAQ:NVDA,NASDAQ:AVGO,NASDAQ:MU,NASDAQ:AMD\nI\tServices to the Health Industry\tNYSE:DGX,NASDAQ:ASTH\nI\tSpecialty Insurance\tNYSE:FNF,NYSE:ORI,NYSE:FAF,NYSE:ESNT\nI\tSpecialty Stores\tNASDAQ:WMT,NASDAQ:COST,NASDAQ:ORLY,NYSE:TGT\nI\tSpecialty Telecommunications\tNASDAQ:SPCX,NASDAQ:ECHO,NASDAQ:ASTS,NASDAQ:IRDM\nI\tSteel\tNYSE:NUE,NASDAQ:STLD,NYSE:RS,NYSE:CLF\nI\tTelecommunications Equipment\tNASDAQ:AAPL,NASDAQ:CSCO,NYSE:MSI,NYSE:CIEN\nI\tTobacco\tNYSE:PM,NYSE:MO,NYSE:TPB\nI\tTools & Hardware\tNYSE:SNA,NYSE:SWK,NYSE:ALLE\nI\tTrucking\tNASDAQ:ODFL,NASDAQ:JBHT,NYSE:XPO,NYSE:FDXF\nI\tTrucks/Construction/Farm Machinery\tNYSE:CAT,NYSE:DE,NASDAQ:PCAR,NYSE:WAB\nI\tWater Utilities\tNYSE:AWK,NYSE:WTRG,NYSE:AWR,NYSE:CWT\nI\tWholesale Distributors\tNYSE:GWW,NASDAQ:FAST,NYSE:FERG,NYSE:GPC\nI\tWireless Telecommunications\tNYSE:VZ,NASDAQ:TMUS,NYSE:T,NASDAQ:TIGO\nS\tCommercial Services\tNASDAQ:SHOP,NYSE:SPGI,NASDAQ:CTAS,NYSE:MCO\nS\tCommunications\tNASDAQ:SPCX,NYSE:VZ,NASDAQ:TMUS,NYSE:T\nS\tConsumer Durables\tNASDAQ:TSLA,NYSE:GM,NYSE:F,NYSE:DHI\nS\tConsumer Non-Durables\tNYSE:KO,NYSE:PG,NYSE:PM,NASDAQ:PEP\nS\tConsumer Services\tNYSE:DIS,NYSE:MCD,NASDAQ:BKNG,NASDAQ:SBUX\nS\tDistribution Services\tNYSE:MCK,NYSE:COR,NYSE:GWW,NASDAQ:FAST\nS\tElectronic Technology\tNASDAQ:NVDA,NASDAQ:AAPL,NASDAQ:AVGO,NASDAQ:MU\nS\tEnergy Minerals\tNYSE:XOM,NYSE:CVX,NYSE:COP,NYSE:MPC\nS\tFinance\tNYSE:BRK.B,NYSE:JPM,NYSE:V,NYSE:MA\nS\tHealth Services\tNYSE:UNH,NYSE:HCA,NYSE:ELV,NYSE:CI\nS\tHealth Technology\tNYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK\nS\tIndustrial Services\tNYSE:PWR,NYSE:WMB,NYSE:WM,NYSE:EPD\nS\tMiscellaneous\tNYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS\nS\tNon-Energy Minerals\tNYSE:SCCO,NYSE:NEM,NYSE:FCX,NYSE:NUE\nS\tProcess Industries\tNASDAQ:LIN,NYSE:ECL,NYSE:SHW,NYSE:APD"
+string usPeer2 = "\nS\tProducer Manufacturing\tNASDAQ:AMAT,NASDAQ:LRCX,NYSE:CAT,NYSE:GEV\nS\tRetail Trade\tNASDAQ:AMZN,NASDAQ:WMT,NASDAQ:COST,NYSE:HD\nS\tTechnology Services\tNASDAQ:GOOG,NASDAQ:MSFT,NASDAQ:META,NASDAQ:PLTR\nS\tTransportation\tNYSE:UNP,NYSE:UBER,NASDAQ:CSX,NASDAQ:DASH\nS\tUtilities\tNYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK"
+
+usList(string kind, string name) =>
+    string hit = ""
+    if name != ""
+        hit := findList(usPeer0, kind, name)
+        if hit == ""
+            hit := findList(usPeer1, kind, name)
+        if hit == ""
+            hit := findList(usPeer2, kind, name)
+    hit
+
+string twPeer0 = "\nI\tAdvertising/Marketing Services\tTPEX:6798,TPEX:3085\nI\tAerospace & Defense\tTWSE:2634,TPEX:6829,TWSE:3004,TWSE:4572\nI\tAgricultural Commodities/Milling\tTWSE:1229,TWSE:1210,TWSE:1215,TWSE:1232\nI\tAir Freight/Couriers\tTWSE:5607,TPEX:5609,TWSE:1443,TPEX:2643\nI\tAirlines\tTWSE:2618,TWSE:2610,TWSE:2646,TWSE:6757\nI\tAlternative Power Generation\tTWSE:2072,TWSE:6869,TWSE:6873,TWSE:1529\nI\tAluminum\tTWSE:6230,TPEX:8942,TWSE:9906,TPEX:4558\nI\tApparel/Footwear\tTWSE:1476,TWSE:9904,TWSE:9910,TWSE:1477\nI\tAuto Parts: OEM\tTWSE:1319,TWSE:6605,TWSE:1563,TPEX:6279\nI\tAutomotive Aftermarket\tTWSE:2105,TWSE:2101,TWSE:2106,TWSE:2102\nI\tBeverages: Non-Alcoholic\tTWSE:1234,TWSE:1256,TWSE:1213\nI\tBiotechnology\tTPEX:6696,TWSE:6919,TWSE:6949,TPEX:7924\nI\tBroadcasting\tTPEX:8329,TWSE:9928\nI\tBuilding Products\tTWSE:9958,TPEX:4565,TWSE:1810,TWSE:1603\nI\tCable/Satellite TV\tTWSE:6464,TWSE:6184\nI\tChemicals: Agricultural\tTWSE:1722,TWSE:1712,TWSE:1708,TWSE:6534\nI\tChemicals: Major Diversified\tTWSE:1303,TWSE:1717,TPEX:4749,TWSE:4763\nI\tChemicals: Specialty\tTWSE:1301,TWSE:1326,TWSE:1402,TWSE:1773\nI\tCommercial Printing/Forms\tTWSE:8481,TPEX:8401,TPEX:8071,TPEX:8906\nI\tComputer Communications\tTWSE:3029,TWSE:2392,TWSE:3704,TWSE:7689\nI\tComputer Peripherals\tTWSE:2317,TWSE:3653,TWSE:2301,TWSE:2409\nI\tComputer Processing Hardware\tTWSE:2357,TWSE:3231,TWSE:2395,TWSE:4938\nI\tConstruction Materials\tTWSE:1101,TWSE:1102,TWSE:2504,TWSE:1104\nI\tContainers/Packaging\tTWSE:9939,TWSE:1904,TWSE:9907,TWSE:4306\nI\tData Processing Services\tTWSE:6669,TWSE:7711,TPEX:6811,TWSE:6614\nI\tDepartment Stores\tTWSE:2903,TWSE:2910,TPEX:7731,TPEX:2942\nI\tElectric Utilities\tTPEX:3691,TPEX:8931,TPEX:7897\nI\tElectrical Products\tTWSE:2383,TWSE:3665,TWSE:1519,TWSE:1605\nI\tElectronic Components\tTWSE:3037,TWSE:3008,TWSE:8046,TWSE:4958\nI\tElectronic Equipment/Instruments\tTWSE:7769,TWSE:2360,TWSE:7750,TWSE:3406\nI\tElectronic Production Equipment\tTWSE:2308,TWSE:3017,TWSE:2382,TWSE:2327\nI\tElectronics Distributors\tTWSE:3036,TWSE:6515,TWSE:3702,TWSE:2347\nI\tElectronics/Appliance Stores\tTPEX:7710,TWSE:6281\nI\tElectronics/Appliances\tTWSE:2371,TPEX:3595,TWSE:2489,TWSE:2374\nI\tEngineering & Construction\tTWSE:2404,TWSE:6139,TWSE:6691,TWSE:6944\nI\tEnvironmental Services\tTWSE:8422,TPEX:6803,TWSE:8341,TPEX:8390\nI\tFinance/Rental/Leasing\tTWSE:5871,TWSE:9941,TWSE:6592,TWSE:7855\nI\tFinancial Conglomerates\tTWSE:2887,TPEX:7777\nI\tFood Distributors\tTPEX:1264,TWSE:2913,TPEX:5902\nI\tFood Retail\tTWSE:1216,TWSE:2912,TPEX:5903,TPEX:2754\nI\tFood: Major Diversified\tTWSE:1231,TWSE:1227,TWSE:1203,TWSE:1702\nI\tFood: Meat/Fish/Dairy\tTWSE:1201,TWSE:7791,TPEX:8905\nI\tFood: Specialty/Candy\tTWSE:2723,TWSE:1737,TWSE:1217,TPEX:4207\nI\tForest Products\tTWSE:6655,TPEX:8444\nI\tGas Distributors\tTWSE:9908,TPEX:8908,TWSE:9926,TPEX:8917\nI\tHome Furnishings\tTWSE:8464,TWSE:3149,TWSE:8482,TWSE:9935\nI\tHomebuilding\tTWSE:9945,TWSE:2540,TWSE:1808,TWSE:2548\nI\tHospital/Nursing Management\tTWSE:6931,TPEX:4139\nI\tHotels/Resorts/Cruise lines\tTWSE:2707,TWSE:2704,TWSE:2748,TWSE:2739\nI\tHousehold/Personal Care\tTWSE:6790,TWSE:4137,TPEX:6523,TPEX:6703\nI\tIndustrial Machinery\tTPEX:6488,TPEX:3081,TWSE:1590,TWSE:3532\nI\tIndustrial Specialties\tTWSE:1802,TWSE:1560,TPEX:1785,TWSE:7768\nI\tInformation Technology Services\tTWSE:6533,TWSE:2480,TWSE:7765,TWSE:6914\nI\tInternet Retail\tTPEX:5321,TPEX:8477,TWSE:6908\nI\tInternet Software/Services\tTWSE:6183,TPEX:5287,TPEX:5278,TWSE:3130\nI\tInvestment Banks/Brokers\tTWSE:2885,TWSE:2855,TWSE:6005,TWSE:2889\nI\tInvestment Managers\tTWSE:6901,TPEX:7882\nI\tLife/Health Insurance\tTWSE:2882,TWSE:2883,TPEX:5859,TWSE:2905\nI\tMajor Banks\tTWSE:2884,TWSE:2886,TWSE:2892,TWSE:2845\nI\tMajor Telecommunications\tTWSE:2412,TPEX:7901,TPEX:7842\nI\tMarine Shipping\tTWSE:2603,TWSE:2615,TWSE:2609,TWSE:2637\nI\tMedical Distributors\tTPEX:6617,TWSE:4104,TWSE:4164,TPEX:7713\nI\tMedical Specialties\tTPEX:4728,TPEX:6748,TWSE:4736,TPEX:4129\nI\tMedical/Nursing Services\tTPEX:3218,TWSE:4178,TPEX:6676,TWSE:7803\nI\tMetal Fabrication\tTWSE:2059,TPEX:6584,TWSE:2211,TWSE:2476\nI\tMiscellaneous Commercial Services\tTWSE:2449,TWSE:6257,TPEX:3264,TWSE:7799\nI\tMiscellaneous Manufacturing\tTWSE:4583,TWSE:1597,TWSE:7818,TPEX:8383"
+string twPeer1 = "\nI\tMotor Vehicles\tTWSE:2206,TWSE:9921,TWSE:2201,TWSE:2204\nI\tMovies/Entertainment\tTPEX:6596,TPEX:5905,TPEX:6856,TPEX:4806\nI\tMulti-Line Insurance\tTWSE:2881,TWSE:2851\nI\tOffice Equipment/Supplies\tTWSE:6957,TPEX:8342,TPEX:4765\nI\tOil Refining/Marketing\tTWSE:6505,TPEX:1742\nI\tOther Consumer Services\tTPEX:5530,TWSE:2731,TWSE:8462,TPEX:3551\nI\tOther Consumer Specialties\tTPEX:8932,TWSE:9946,TPEX:9950,TWSE:4807\nI\tOther Metals/Minerals\tTPEX:8358,TWSE:7610,TPEX:5009,TWSE:2009\nI\tOther Transportation\tTWSE:2633,TWSE:2645,TWSE:2630,TWSE:2614\nI\tPackaged Software\tTPEX:3293,TWSE:6214,TWSE:7822,TPEX:3693\nI\tPharmaceuticals: Generic\tTPEX:7832,TWSE:1762,TPEX:6677,TPEX:4154\nI\tPharmaceuticals: Major\tTWSE:6446,TWSE:1795,TPEX:4123,TPEX:4743\nI\tPharmaceuticals: Other\tTWSE:6472,TWSE:7780,TWSE:1707,TPEX:8436\nI\tProperty/Casualty Insurance\tTWSE:2850,TWSE:2832,TWSE:2816\nI\tPublishing: Books/Magazines\tTWSE:9929,TPEX:8923\nI\tPulp & Paper\tTWSE:1907,TWSE:1905,TWSE:1909,TWSE:6863\nI\tReal Estate Development\tTWSE:2542,TWSE:2539,TWSE:2923,TWSE:6177\nI\tReal Estate Investment Trusts\tTWSE:01010T,TWSE:01007T,TWSE:01004T,TWSE:01001T\nI\tRecreational Products\tTWSE:6670,TWSE:1736,TWSE:8033,TPEX:5478\nI\tRegional Banks\tTWSE:2891,TWSE:2890,TWSE:2880,TWSE:5880\nI\tRestaurants\tTWSE:2727,TPEX:7883,TWSE:2753,TPEX:4419\nI\tSemiconductors\tTWSE:2330,TWSE:2454,TWSE:3711,TWSE:2303\nI\tSpecialty Stores\tTPEX:5904,TWSE:2247,TPEX:8927,TPEX:7922\nI\tSpecialty Telecommunications\tTPEX:6561,TWSE:6136\nI\tSteel\tTWSE:2002,TWSE:2027,TWSE:2006,TWSE:2015\nI\tTelecommunications Equipment\tTWSE:2345,TWSE:6285,TWSE:2498,TWSE:3596\nI\tTextiles\tTWSE:2915,TWSE:1434,TWSE:1440,TWSE:1419\nI\tTools & Hardware\tTPEX:6904,TPEX:1570,TWSE:4999,TWSE:1538\nI\tTrucking\tTWSE:2608,TPEX:5604,TPEX:6911\nI\tTrucks/Construction/Farm Machinery\tTWSE:2208,TWSE:6753,TPEX:2644,TPEX:2070\nI\tWater Utilities\tTPEX:8936,TPEX:8435\nI\tWholesale Distributors\tTWSE:2207,TPEX:8415,TWSE:3010,TWSE:9937\nI\tWireless Telecommunications\tTWSE:4904,TWSE:3045,TPEX:6170\nS\tCommercial Services\tTWSE:2449,TWSE:6257,TPEX:3264,TWSE:7799\nS\tCommunications\tTWSE:2412,TWSE:4904,TWSE:3045,TPEX:6561\nS\tConsumer Durables\tTWSE:8464,TWSE:2105,TWSE:9945,TWSE:2371\nS\tConsumer Non-Durables\tTWSE:1476,TWSE:9904,TWSE:9910,TWSE:1477\nS\tConsumer Services\tTWSE:2707,TPEX:5530,TWSE:2727,TWSE:2704\nS\tDistribution Services\tTWSE:2207,TWSE:3036,TWSE:6515,TWSE:3702\nS\tElectronic Technology\tTWSE:2330,TWSE:2454,TWSE:2308,TWSE:2317\nS\tEnergy Minerals\tTWSE:6505,TPEX:1742,TWSE:2904,TWSE:1516\nS\tFinance\tTWSE:2881,TWSE:2882,TWSE:2891,TWSE:2887\nS\tHealth Services\tTPEX:3218,TWSE:4178,TWSE:6931,TPEX:4139\nS\tHealth Technology\tTWSE:6446,TPEX:6696,TWSE:6919,TWSE:6949\nS\tIndustrial Services\tTWSE:2404,TWSE:6139,TWSE:6691,TWSE:6944\nS\tNon-Energy Minerals\tTWSE:2002,TWSE:1101,TWSE:1102,TPEX:8358\nS\tProcess Industries\tTWSE:1303,TWSE:1301,TWSE:1326,TWSE:1802\nS\tProducer Manufacturing\tTWSE:2383,TWSE:2059,TPEX:6488,TWSE:3665\nS\tRetail Trade\tTWSE:1216,TWSE:2912,TPEX:5904,TWSE:8454\nS\tTechnology Services\tTWSE:6669,TPEX:3293,TWSE:6214,TWSE:7711\nS\tTransportation\tTWSE:2603,TWSE:2615,TWSE:2618,TWSE:2609\nS\tUtilities\tTWSE:2072,TWSE:9908,TPEX:8936,TPEX:8908"
+
+twList(string kind, string name) =>
+    string hit = ""
+    if name != ""
+        hit := findList(twPeer0, kind, name)
+        if hit == ""
+            hit := findList(twPeer1, kind, name)
+    hit
+
+peerBaskets() =>
+    string indList = ""
+    string secList = ""
+    if isTaiwan
+        indList := twList("I", syminfo.industry)
+        secList := twList("S", syminfo.sector)
+    else
+        indList := usList("I", syminfo.industry)
+        secList := usList("S", syminfo.sector)
+    string raw = indList != "" ? indList : secList
+    string srcName = indList != "" ? "Ind" : secList != "" ? "Sec" : ""
+    [raw, srcName]
 [peerRaw, peerSrc] = peerBaskets()
 string tk0 = tickerAt(peerRaw, 0)
 string tk1 = tickerAt(peerRaw, 1)
@@ -682,14 +386,68 @@ string tk4 = tickerAt(peerRaw, 4)
 string tk5 = tickerAt(peerRaw, 5)
 string tk6 = tickerAt(peerRaw, 6)
 string tk7 = tickerAt(peerRaw, 7)
-float k0 = keptPE(tk0, peerClose(tk0), peerEarn(tk0))
-float k1 = keptPE(tk1, peerClose(tk1), peerEarn(tk1))
-float k2 = keptPE(tk2, peerClose(tk2), peerEarn(tk2))
-float k3 = keptPE(tk3, peerClose(tk3), peerEarn(tk3))
-float k4 = keptPE(tk4, peerClose(tk4), peerEarn(tk4))
-float k5 = keptPE(tk5, peerClose(tk5), peerEarn(tk5))
-float k6 = keptPE(tk6, peerClose(tk6), peerEarn(tk6))
-float k7 = keptPE(tk7, peerClose(tk7), peerEarn(tk7))
+[px0, p20_0, wp0] = peerStats(tk0)
+float e0 = peerEarn(tk0)
+float k0 = keptPE(tk0, px0, e0)
+[px1, p20_1, wp1] = peerStats(tk1)
+float e1 = peerEarn(tk1)
+float k1 = keptPE(tk1, px1, e1)
+[px2, p20_2, wp2] = peerStats(tk2)
+float e2 = peerEarn(tk2)
+float k2 = keptPE(tk2, px2, e2)
+[px3, p20_3, wp3] = peerStats(tk3)
+float e3 = peerEarn(tk3)
+float k3 = keptPE(tk3, px3, e3)
+[px4, p20_4, wp4] = peerStats(tk4)
+float e4 = peerEarn(tk4)
+float k4 = keptPE(tk4, px4, e4)
+[px5, p20_5, wp5] = peerStats(tk5)
+float e5 = peerEarn(tk5)
+float k5 = keptPE(tk5, px5, e5)
+[px6, p20_6, wp6] = peerStats(tk6)
+float e6 = peerEarn(tk6)
+float k6 = keptPE(tk6, px6, e6)
+[px7, p20_7, wp7] = peerStats(tk7)
+float e7 = peerEarn(tk7)
+float k7 = keptPE(tk7, px7, e7)
+
+// Same-country peer price performance. Used outside the US, where the sector ETFs are US funds.
+avg8(float a, float b, float c, float d, float e, float f, float g, float h) =>
+    float s = 0.0
+    int n = 0
+    if not na(a)
+        s += a
+        n += 1
+    if not na(b)
+        s += b
+        n += 1
+    if not na(c)
+        s += c
+        n += 1
+    if not na(d)
+        s += d
+        n += 1
+    if not na(e)
+        s += e
+        n += 1
+    if not na(f)
+        s += f
+        n += 1
+    if not na(g)
+        s += g
+        n += 1
+    if not na(h)
+        s += h
+        n += 1
+    [n > 0 ? s / n : na, n]
+
+[peerRet20, peerPxN] = avg8(p20_0, p20_1, p20_2, p20_3, p20_4, p20_5, p20_6, p20_7)
+[peerPerfAvg, peerPerfN] = avg8(wp0, wp1, wp2, wp3, wp4, wp5, wp6, wp7)
+benchRet20 = not na(benchClose) and not na(benchClose[20]) and benchClose[20] != 0 ? benchClose / benchClose[20] - 1 : na
+peerGrp = not na(peerRet20) and not na(benchRet20) ? peerRet20 - benchRet20 : na
+rsPeerScore = not na(peerPerfAvg) and peerPerfAvg != 0 ? perfStock / peerPerfAvg * 100 : na
+rsPeerRating = na(rsPeerScore) ? na : rsBucket(rsPeerScore)
+
 
 float peEps = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)
 float stockPE = peEps > 0 ? stockClose / peEps : na
@@ -724,7 +482,7 @@ if peN >= 2
     peerMed := peN % 2 == 1 ? array.get(peBasket, mid) : (array.get(peBasket, mid - 1) + array.get(peBasket, mid)) / 2.0
 
 peTxt(float x) =>
-    str.tostring(x, "#.#")
+    n0(x)
 
 // ==========================================
 // 3. VISUALIZATION
@@ -734,33 +492,34 @@ set_row(row, title, value, isGood, isBad, string tip = "") =>
     if row < 20  // Safety check to prevent out of bounds
         c_val = isBad ? c_bear : isGood ? c_bull : c_text
         icon = isBad ? "▼" : isGood ? "▲" : "•"
-        table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left, tooltip=tip)
-        table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right, tooltip=tip)
-        table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small, tooltip=tip)
+        table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.tiny, text_halign=text.align_left, tooltip=tip)
+        table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.tiny, text_halign=text.align_right, tooltip=tip)
+        table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.tiny, tooltip=tip)
 
 if barstate.islast
     // Initialize row counter
     currentRow = 0
     
     // 1. Context
-    set_row(currentRow, "Seasonality", seasonalStr, isStrongMonth, isWeakMonth)
-    currentRow := currentRow + 1
+    if benchSym != ""
+        set_row(currentRow, "S " + benchName, seasonalStr, isStrongMonth, isWeakMonth, "Average " + benchName + " return for this calendar month over the last 10 completed years.")
+        currentRow := currentRow + 1
     
     // 2. Fundamentals (only for stocks with available data)
     if hasFinancialData
         // Show earnings only if available
         if not na(earningsTime)
-            set_row(currentRow, "Earnings", earningsDateStr, false, isEarningsSoon)
+            set_row(currentRow, "Earn", earningsDateStr, false, isEarningsSoon)
             currentRow := currentRow + 1
         
         // Show growth only if data available
         if not (na(salesGrowth) or na(epsGrowth))
-            set_row(currentRow, "Growth (S/E)", salesEpsStr, isGrowthStrong, false)
+            set_row(currentRow, "Grw", salesEpsStr, isGrowthStrong, false, "TTM sales / EPS versus four fiscal quarters ago, percent.")
             currentRow := currentRow + 1
         
         // Show acceleration only if data available
         if not (na(salesAcceleration) or na(epsAcceleration))
-            set_row(currentRow, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
+            set_row(currentRow, "Acc", accelerationStr, isBothAccelerating, false, "Change in that year-over-year rate versus the prior fiscal quarter, in percentage points.")
             currentRow := currentRow + 1
 
     // Trailing P/E against the same industry, or the same sector when the industry basket is thin.
@@ -771,20 +530,19 @@ if barstate.islast
         bool peRich = false
         string peTip = ""
         if peEps <= 0
-            peVal := na(peerMed) ? "loss" : "loss (vs " + peTxt(peerMed) + ")"
+            peVal := "loss"
             peTip := "本益比 is not meaningful without trailing earnings." + (na(peerMed) ? "" : " Category median is " + peTxt(peerMed) + ".")
         else if na(peerMed)
             peVal := peTxt(stockPE)
-            peTip := "本益比 (TTM P/E). Fewer than two profitable large-cap peers in this category."
+            peTip := "本益比 (TTM P/E). Fewer than two profitable " + mktPlace + " peers in this category."
         else
             float pePrem = (stockPE / peerMed - 1) * 100
-            string premStr = (pePrem > 0 ? "+" : "") + str.tostring(pePrem, "#") + "%"
             peLabel := "PE/" + peerSrc
-            peVal := peTxt(stockPE) + " (" + premStr + ")"
+            peVal := peTxt(stockPE) + "/" + sgn0(pePrem)
             peCheap := stockPE <= peerMed * 0.85
             peRich := stockPE >= peerMed * 1.5
             string catWord = peerSrc == "Ind" ? "industry" : "sector"
-            peTip := "本益比 " + peTxt(stockPE) + " vs " + catWord + " median " + peTxt(peerMed) + " (" + str.tostring(peN) + " largest US peers, TTM P/E between 0 and 100). Green: 15% or more below. Red: 50% or more above."
+            peTip := "本益比 " + peTxt(stockPE) + " vs " + mktPlace + " " + catWord + " median " + peTxt(peerMed) + " (" + str.tostring(peN) + " largest " + mktPlace + " peers, TTM P/E between 0 and 100). Green: 15% or more below. Red: 50% or more above."
         set_row(currentRow, peLabel, peVal, peCheap, peRich, peTip)
         currentRow := currentRow + 1
         
@@ -793,11 +551,12 @@ if barstate.islast
       //      set_row(currentRow, "─────", "", false, false)
         //    currentRow := currentRow + 1
     
-    // 3. Market Context
-    set_row(currentRow, "Mkt(S5TH)", s5thStr, isBreadthOversold, isBreadthOverbought)
-    currentRow := currentRow + 1
-    set_row(currentRow, "VIX", vixStr, isGreed, isFear)
-    currentRow := currentRow + 1
+    // 3. Market Context. S5TH and VIX are US series, so they stay off other countries.
+    if showGlobalRisk
+        set_row(currentRow, "S5TH", s5thStr, isBreadthOversold, isBreadthOverbought, "Percent of S&P 500 stocks above their 50-day average.")
+        currentRow := currentRow + 1
+        set_row(currentRow, "VIX", vixStr, isGreed, isFear, "CBOE VIX. US volatility only.")
+        currentRow := currentRow + 1
     
     // Add separator after market context
 //    set_row(currentRow, "─────", "", false, false)
@@ -805,24 +564,35 @@ if barstate.islast
 
     // 4. Group Strength
     // Only show Sector RS if not SPY
-    if sectorETF != "AMEX:SPY"
-        set_row(currentRow, "Sec(" + secTicker + ")", str.tostring(secRS*100, "#.#") + "%", secRS > 0.02, secRS < -0.02)
+    if isUSMarket and sectorETF != "AMEX:SPY"
+        set_row(currentRow, "S." + secTicker, sgn0(secRS * 100) + "%", secRS > 0.02, secRS < -0.02)
         currentRow := currentRow + 1
     
     // Only show Industry RS if valid ETF found and different from Sector ETF
-    if not na(industryETF) and sectorETF != industryETF
-        set_row(currentRow, "Ind(" + indTicker + ")", str.tostring(indRS*100, "#.#") + "%", indRS > 0.02, indRS < -0.02)
+    if isUSMarket and not na(industryETF) and sectorETF != industryETF
+        set_row(currentRow, "I." + indTicker, sgn0(indRS * 100) + "%", indRS > 0.02, indRS < -0.02)
         currentRow := currentRow + 1
     
     // 5. Technicals
-    set_row(currentRow, "RS v SPX", str.tostring(rsRating), isRSStrong, isRSWeak)
-    currentRow := currentRow + 1
+    if benchSym != ""
+        set_row(currentRow, "RS " + benchName, str.tostring(rsRating), isRSStrong, isRSWeak, "Weighted 3, 6, 9 and 12-month performance versus " + benchName + ".")
+        currentRow := currentRow + 1
     
     // Only show RS vs Sector if not SPY (avoid duplicate of RS vs SPX)
-    if sectorETF != "AMEX:SPY"
-        set_row(currentRow, "RS v " + secTicker + "", str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
+    if isUSMarket and sectorETF != "AMEX:SPY"
+        set_row(currentRow, "RS " + secTicker, str.tostring(rsSectorRating), isSectorRSStrong, isSectorRSWeak)
         currentRow := currentRow + 1
     
     // Show Industry RS Rating only if valid ETF found and different ETF
-    if not na(industryETF) and sectorETF != industryETF
-        set_row(currentRow, "RS v " + indTicker + "", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+    if isUSMarket and not na(industryETF) and sectorETF != industryETF
+        set_row(currentRow, "RS " + indTicker, str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
+
+    // Outside the US, industry strength is the same-country peer basket versus the local index.
+    if not isUSMarket and peerPxN >= 2 and not na(peerGrp)
+        string grpWord = peerSrc == "Sec" ? "sector" : "industry"
+        string grpLabel = peerSrc == "Sec" ? "Sec" : "Ind"
+        set_row(currentRow, grpLabel + " " + benchName, sgn0(peerGrp * 100) + "%", peerGrp > 0.02, peerGrp < -0.02, "20-bar return of the largest " + mktPlace + " " + grpWord + " stocks minus " + benchName + ".")
+        currentRow := currentRow + 1
+        if not na(rsPeerRating)
+            set_row(currentRow, "RS " + grpLabel, str.tostring(rsPeerRating), rsPeerRating >= 80, rsPeerRating < 65, "IBD-style relative strength versus those " + mktPlace + " " + grpWord + " stocks.")
+            currentRow := currentRow + 1
