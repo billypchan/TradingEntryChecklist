@@ -84,6 +84,17 @@ This Pine Script creates a comprehensive checklist table displayed in the bottom
 - **Red (❌):** Either metric decelerating
 - **Display:** Acceleration percentages in "S:X.X% E:X.X%" format
 
+### 9. P/E vs Category (本益比)
+**Shows:** Trailing P/E versus the median trailing P/E of large US stocks in the same industry
+**Calculation:**
+- Stock and peer P/E: daily close / TTM EPS
+- Peers are the largest US primary common stocks over $1B market cap in the same TradingView industry. If that industry has fewer than two names, the basket falls back to the same sector. Membership snapshot: 2026-10-13
+- The stock itself is excluded. Peers with no earnings, or a TTM P/E above 100, are excluded so one collapsed earnings year does not set the median
+- The median is shown only when at least two peers qualify
+- **Green:** Stock P/E is at least 15% below the category median
+- **Red:** Stock P/E is at least 50% above the category median
+- **Display:** `28.6 (-37%)` is the stock P/E and its discount or premium to the median. `PE/Ind` uses the industry basket. `PE/Sec` uses the sector fallback. `loss` means trailing earnings are negative
+
 ## Visual Indicators
 - **❌ Red:** Warning/negative condition
 - **✅ Green:** Positive/favorable condition  

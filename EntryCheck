@@ -18,6 +18,7 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // Earnings Dates: Upcoming earnings announcement tracking with 14-day warning
 // Growth Metrics: Year-over-year sales and EPS growth rates
 // Acceleration: Quarter-over-quarter growth acceleration analysis
+// P/E (本益比): Trailing P/E vs the median trailing P/E of large US stocks in the same industry
 // Sector & Industry Analysis:
 
 // Sector Relative Strength: 20-day performance vs SPY benchmark
@@ -47,6 +48,9 @@ indicator("Entry Checklist", shorttitle = "EntryCheck", overlay = true, dynamic_
 // NVO - verify industry ETF mapping works NASDAQ:IBB
 // MSTR - verify industry ETF mapping works AMEX:FDN
 // HCC - verify industry ETF mapping works XLE
+// NVDA - PE/Ind below or near semiconductor large-cap median
+// GOOG - PE/Ind vs internet software large caps; loss-makers show "loss"
+// BTCUSD - no PE row
 // ==========================================
 
 // ==========================================
@@ -452,7 +456,7 @@ industryETF = switch syminfo.industry
     => na
     
 // 4. Fetch Data
-[sectorClose, industryClose, benchmarkClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close), request.security(industryETF, "D", close), request.security("SPY", "D", close)])
+[sectorClose, industryClose, benchmarkClose] = request.security(syminfo.tickerid, "D", [request.security(sectorETF, "D", close, ignore_invalid_symbol=true), request.security(industryETF, "D", close, ignore_invalid_symbol=true), request.security("SPY", "D", close, ignore_invalid_symbol=true)])
 
 // 5. Calculate Rel Perf (20D)
 calc_rel(asset, bench) =>
@@ -489,23 +493,252 @@ getTicker(etf) =>
 secTicker = getTicker(sectorETF)
 indTicker = na(industryETF) ? "" : getTicker(industryETF)
 
+
+// --- H. Trailing P/E vs same-category stocks (本益比) ---
+// Pine cannot list every symbol in an industry. The basket is the largest US primary
+// common stocks over $1B in the same TradingView industry, or the same sector when
+// that industry has fewer than two listed names. Membership snapshot: 2026-10-13.
+// The multiple is live: daily close / trailing twelve-month EPS.
+// Peers with no earnings or a TTM P/E above 100 are left out of the median so a
+// one-off earnings collapse does not set the category multiple.
+// Cheap (green): stock P/E at least 15% below the category median.
+// Rich (red): stock P/E at least 50% above the category median.
+peerBaskets() =>
+    string ind = switch syminfo.industry
+        "Advertising/Marketing Services" => "NYSE:OMC,NASDAQ:PTRN,NASDAQ:DJT,NASDAQ:SBET,NYSE:CCO"
+        "Aerospace & Defense" => "NYSE:GE,NYSE:RTX,NYSE:BA,NYSE:LMT,NYSE:GD,NYSE:HWM,NYSE:NOC,NYSE:TDG"
+        "Agricultural Commodities/Milling" => "NYSE:ADM,NYSE:BG,NYSE:CTVA,NASDAQ:PPC,AMEX:SEB,NASDAQ:CALM,NYSE:TRLV,NYSE:AGRO"
+        "Air Freight/Couriers" => "NASDAQ:DASH,NYSE:UPS,NYSE:FDX,NYSE:EXPD,NASDAQ:CHRW,NASDAQ:GRAB,NASDAQ:CART,NYSE:R"
+        "Airlines" => "NYSE:DAL,NASDAQ:UAL,NYSE:LUV,NASDAQ:AAL,NYSE:CPA,NYSE:ALK,NASDAQ:SKYW,NASDAQ:ALGT"
+        "Alternative Power Generation" => "NYSE:BIP,NASDAQ:TLN,NASDAQ:FRVO,NASDAQ:RNW,NYSE:XIFR"
+        "Aluminum" => "NYSE:AA,NASDAQ:CENX,NYSE:CSTM,NASDAQ:KALU"
+        "Apparel/Footwear" => "NYSE:NKE,NYSE:RL,NYSE:ONON,NYSE:DECK,NASDAQ:LULU,NYSE:LEVI,NYSE:VFC,NYSE:BIRK"
+        "Apparel/Footwear Retail" => "NYSE:TJX,NASDAQ:ROST,NYSE:TPR,NYSE:BURL,NYSE:GAP,NASDAQ:URBN,NYSE:VSXY,NYSE:ANF"
+        "Auto Parts: OEM" => "NYSE:ITW,NYSE:CMI,NYSE:ITT,NYSE:DCI,NYSE:ALSN,NYSE:ALV,NYSE:LEA,NASDAQ:GTX"
+        "Automotive Aftermarket" => "NASDAQ:LKQ,NASDAQ:DORM,NASDAQ:GT,NASDAQ:XPEL"
+        "Beverages: Alcoholic" => "NYSE:STZ,NYSE:BF.B,NYSE:TAP,NYSE:SAM"
+        "Beverages: Non-Alcoholic" => "NYSE:KO,NASDAQ:MNST,NASDAQ:CCEP,NASDAQ:KDP,NASDAQ:COKE,NASDAQ:CELH,NYSE:PRMB,NASDAQ:FIZZ"
+        "Biotechnology" => "NASDAQ:AMGN,NASDAQ:GILD,NASDAQ:MRNA,NASDAQ:NTRA,NYSE:IQV,NASDAQ:UTHR,NASDAQ:NBIX,NASDAQ:SMMT"
+        "Broadcasting" => "NASDAQ:FOX,NASDAQ:SIRI,NASDAQ:NXST,NYSE:NMAX"
+        "Building Products" => "NYSE:MAS,NYSE:CSL,NYSE:WSO,NYSE:SPXC,NYSE:AOS,NYSE:MHK,NYSE:SSD,NYSE:FBIN"
+        "Cable/Satellite TV" => "NASDAQ:CMCSA,NASDAQ:CHTR,NYSE:SKYD,NASDAQ:VSNT"
+        "Casinos/Gaming" => "NYSE:LVS,NYSE:FLUT,NASDAQ:WYNN,NYSE:MGM,NASDAQ:CZR,NYSE:SGHC,NYSE:BYD,NYSE:RSI"
+        "Chemicals: Agricultural" => "NYSE:CF,NYSE:MOS,NYSE:SMG,NYSE:UAN,NYSE:FMC,NYSE:ODC"
+        "Chemicals: Major Diversified" => "NYSE:DD,NASDAQ:SOLS,NYSE:ESI,NYSE:PRM,NYSE:AVNT,NYSE:NGVT,NASDAQ:IOSP,NYSE:HUN"
+        "Chemicals: Specialty" => "NASDAQ:LIN,NYSE:ECL,NYSE:APD,NYSE:DOW,NYSE:LYB,NYSE:ALB,NYSE:NEU,NYSE:WLK"
+        "Coal" => "NYSE:HCC,NYSE:CNR,NASDAQ:ARLP,NYSE:BTU,NYSE:AMR,NYSE:NRP"
+        "Commercial Printing/Forms" => "NASDAQ:WMG,NASDAQ:CMPR,NYSE:DLX"
+        "Computer Peripherals" => "NYSE:ANET,NASDAQ:SNDK,NASDAQ:STX,NASDAQ:WDC,NYSE:P,NASDAQ:NTAP,NASDAQ:EXTR,NASDAQ:QMCO"
+        "Computer Processing Hardware" => "NYSE:DELL,NYSE:HPE,NASDAQ:SMCI,NASDAQ:ZBRA,NYSE:IONQ,NASDAQ:QNT,NASDAQ:QBTS,NASDAQ:RGTI"
+        "Construction Materials" => "NYSE:CRH,NYSE:MLM,NYSE:VMC,NYSE:AMRZ,NYSE:JHX,NYSE:ACA,NYSE:EXP,NASDAQ:USLM"
+        "Containers/Packaging" => "NYSE:SW,NYSE:PKG,NYSE:AMCR,NYSE:BALL,NYSE:CCK,NYSE:OC,NYSE:ATR,NYSE:SON"
+        "Contract Drilling" => "NYSE:SLB,NASDAQ:BKR,NYSE:NE,NYSE:RIG,NYSE:VAL,NYSE:HP,NYSE:SDRL,NYSE:BORR"
+        "Data Processing Services" => "NASDAQ:PAYX,NASDAQ:VRSK,NASDAQ:NTNX,NYSE:J,NASDAQ:AKAM,NYSE:TYL,NASDAQ:IREN,NYSE:GDDY"
+        "Department Stores" => "AMEX:DDS,NYSE:M,NASDAQ:OLLI,NYSE:KSS"
+        "Discount Stores" => "NYSE:DG,NASDAQ:DLTR,NASDAQ:FIVE"
+        "Drugstore Chains" => "NYSE:CVS,NYSE:GRDN"
+        "Electric Utilities" => "NYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK,NASDAQ:AEP,NYSE:D,NYSE:VST,NYSE:ETR"
+        "Electrical Products" => "NYSE:GEV,NYSE:ETN,NASDAQ:LITE,NYSE:AME,NYSE:ROK,NYSE:HUBB,NASDAQ:INIO,NYSE:GNRC"
+        "Electronic Components" => "NYSE:APH,NYSE:GLW,NYSE:NVT,NASDAQ:VICR,NASDAQ:TTMI,NASDAQ:CAMT,NASDAQ:BELFA,NYSE:KN"
+        "Electronic Equipment/Instruments" => "NYSE:EMR,NYSE:KEYS,NYSE:Q,NYSE:FTV,NYSE:ONTO,NASDAQ:NXT,NASDAQ:NVMI,NASDAQ:CGNX"
+        "Electronic Production Equipment" => "NYSE:VRT,NYSE:BE,NASDAQ:TER,NASDAQ:FLEX,NASDAQ:SANM,NASDAQ:AEIS,NASDAQ:LFUS,NASDAQ:PLXS"
+        "Electronics Distributors" => "NYSE:SNX,NYSE:ARW,NASDAQ:AVT,NYSE:REZI,NASDAQ:SCSC"
+        "Electronics/Appliance Stores" => "NYSE:BBY,NYSE:GME,NASDAQ:PLBL"
+        "Electronics/Appliances" => "NYSE:SN,NYSE:IMAX,NASDAQ:SONO,NYSE:WHR,NYSE:SPB"
+        "Engineering & Construction" => "NYSE:PWR,NYSE:FIX,NYSE:EME,NYSE:OTIS,NYSE:APG,NYSE:MTZ,NASDAQ:STRL,NASDAQ:IESC"
+        "Environmental Services" => "NYSE:WM,NYSE:RSG,NYSE:GFL,NYSE:CLH,NASDAQ:CWST"
+        "Finance/Rental/Leasing" => "NYSE:V,NYSE:MA,NYSE:AXP,NYSE:URI,NYSE:SUNB,NYSE:RKT,NASDAQ:AFRM,NYSE:SYF"
+        "Financial Conglomerates" => "NYSE:BMNR,NASDAQ:ARCC,NYSE:MAIN,NYSE:OBDC,NASDAQ:GBDC,NASDAQ:PURR,NASDAQ:ASST,NASDAQ:KYIV"
+        "Financial Publishing/Services" => "NYSE:SPGI,NYSE:MCO,NYSE:MSCI,NYSE:EFX,NYSE:FICO,NYSE:TRU,NYSE:FDS,NASDAQ:MORN"
+        "Food Distributors" => "NYSE:SYY,NYSE:USFD,NASDAQ:CHEF,NYSE:UNFI,NYSE:DOLE"
+        "Food Retail" => "NYSE:KR,NYSE:TBBB,NYSE:ACI,NASDAQ:SFM,NYSE:WMK,NASDAQ:IMKTA,NASDAQ:YSWY,NASDAQ:GO"
+        "Food: Major Diversified" => "NYSE:KHC,NYSE:GIS,NYSE:CAG,NYSE:HLF"
+        "Food: Meat/Fish/Dairy" => "NYSE:TSN,NYSE:JBS,NYSE:HRL,NASDAQ:SFD"
+        "Food: Specialty/Candy" => "NASDAQ:PEP,NASDAQ:MDLZ,NYSE:HSY,NYSE:IFF,NYSE:SJM,NYSE:MKC,NYSE:DAR,NYSE:LW"
+        "Forest Products" => "NYSE:LPX,NYSE:TREX,NASDAQ:UFPI"
+        "Gas Distributors" => "NYSE:TRGP,NYSE:SRE,NYSE:CQP,NYSE:ATO,NYSE:NI,NYSE:SWX,NYSE:BKH,NYSE:NJR"
+        "Home Furnishings" => "NYSE:SGI,NASDAQ:PATK,NASDAQ:ARHS,NYSE:MBC,NYSE:LZB"
+        "Home Improvement Chains" => "NYSE:HD,NYSE:LOW,NYSE:BLDR,NYSE:FND"
+        "Homebuilding" => "NYSE:DHI,NYSE:PHM,NYSE:LEN,NYSE:NVR,NYSE:TOL,NASDAQ:FTDR,NYSE:SKY,NASDAQ:CVCO"
+        "Hospital/Nursing Management" => "NYSE:HCA,NYSE:THC,NYSE:UHS,NYSE:PACS,NYSE:CHE,AMEX:NHC,NYSE:BKD,NASDAQ:SGRY"
+        "Hotels/Resorts/Cruise lines" => "NASDAQ:ABNB,NASDAQ:MAR,NYSE:RCL,NYSE:HLT,NYSE:VIK,NYSE:CCL,NYSE:H,NYSE:NCLH"
+        "Household/Personal Care" => "NYSE:PG,NYSE:CL,NYSE:EL,NYSE:KVUE,NASDAQ:KMB,NYSE:CHD,NYSE:CLX,NYSE:ELF"
+        "Industrial Conglomerates" => "NYSE:MMM,NASDAQ:AIIR"
+        "Industrial Machinery" => "NASDAQ:AMAT,NASDAQ:LRCX,NYSE:PH,NYSE:TT,NYSE:JCI,NASDAQ:HON,NYSE:CARR,NYSE:JBL"
+        "Industrial Specialties" => "NYSE:SHW,NYSE:PPG,NYSE:RPM,NYSE:AXTA,NYSE:CSW,NYSE:AZZ,NASDAQ:WDFC,NYSE:FUL"
+        "Information Technology Services" => "NYSE:IBM,NASDAQ:FTNT,NYSE:ACN,NYSE:NET,NASDAQ:WDAY,NASDAQ:CRDO,NYSE:HPQ,NASDAQ:CTSH"
+        "Insurance Brokers/Services" => "NYSE:MRSH,NYSE:AJG,NYSE:AON,NASDAQ:WTW,NYSE:BRO,NYSE:RYAN,NASDAQ:BWIN,NYSE:NP"
+        "Integrated Oil" => "NYSE:XOM,NYSE:CVX,NYSE:EOG,NYSE:OXY,NYSE:OKE,NYSE:DVN,NYSE:EQT,NASDAQ:EXE"
+        "Internet Retail" => "NASDAQ:AMZN,NASDAQ:MELI,NASDAQ:EBAY,NYSE:CPNG,NYSE:CHWY,NYSE:ETSY,NASDAQ:GLBE,NYSE:GIC"
+        "Internet Software/Services" => "NASDAQ:GOOG,NASDAQ:META,NASDAQ:NFLX,NYSE:SPOT,NASDAQ:MSTR,NYSE:RDDT,NASDAQ:VRSN,NASDAQ:FWONA"
+        "Investment Banks/Brokers" => "NYSE:GS,NYSE:SCHW,NASDAQ:IBKR,NASDAQ:CME,NASDAQ:HOOD,NYSE:BNY,NYSE:ICE,NASDAQ:NDAQ"
+        "Investment Managers" => "NYSE:MS,NYSE:BLK,NYSE:BX,NYSE:BN,NYSE:KKR,NYSE:BAM,NYSE:APO,NYSE:AMP"
+        "Investment Trusts/Mutual Funds" => "NYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS,NYSE:BSM,NYSE:FSK,NYSE:KRP,NYSE:PBT"
+        "Life/Health Insurance" => "NYSE:PRU,NYSE:RGA,NYSE:CRBG,NYSE:EQH,NYSE:JXN,NYSE:VOYA,NYSE:PRI,OTC:OICT"
+        "Major Banks" => "NYSE:JPM,NYSE:BAC,NYSE:WFC,NYSE:C,NYSE:COF,NYSE:USB,NYSE:PNC,NASDAQ:HBAN"
+        "Major Telecommunications" => "NASDAQ:LUMN,NASDAQ:LBTYA,NYSE:IDT,NASDAQ:UNIT,NASDAQ:LILA"
+        "Managed Health Care" => "NYSE:UNH,NYSE:ELV,NYSE:CI,NYSE:HUM,NYSE:CNC,NYSE:MOH,NYSE:OSCR,NASDAQ:ALHC"
+        "Marine Shipping" => "NYSE:FRO,NYSE:KEX,NYSE:MATX,NYSE:INSW,NYSE:STNG,NYSE:TDW,NYSE:DHT,NYSE:ECO"
+        "Medical Distributors" => "NYSE:MCK,NYSE:COR,NYSE:CAH,NASDAQ:HSIC"
+        "Medical Specialties" => "NYSE:TMO,NYSE:ABT,NYSE:DHR,NASDAQ:ISRG,NYSE:MDT,NYSE:SYK,NYSE:BSX,NYSE:BDX"
+        "Medical/Nursing Services" => "NYSE:LH,NYSE:SOLV,NASDAQ:BTSG,NYSE:EHC,NYSE:DVA,NASDAQ:ENSG,NYSE:HIMS,NASDAQ:RDNT"
+        "Metal Fabrication" => "NYSE:RBC,NYSE:MLI,NYSE:VMI,NASDAQ:USAR,NASDAQ:ROCK"
+        "Miscellaneous Commercial Services" => "NASDAQ:SHOP,NASDAQ:CTAS,NYSE:VYLR,NASDAQ:PYPL,NYSE:XYZ,NYSE:CPAY,NASDAQ:FISV,NASDAQ:MEDP"
+        "Miscellaneous Manufacturing" => "NYSE:WMS,NYSE:AWI,NYSE:BRC,NYSE:YETI,NYSE:LCII,NYSE:MYE"
+        "Motor Vehicles" => "NASDAQ:TSLA,NYSE:GM,NYSE:F,NASDAQ:RIVN,NYSE:OSK,NASDAQ:VFS,NYSE:FSS,NYSE:HOG"
+        "Movies/Entertainment" => "NYSE:DIS,NYSE:LYV,NYSE:TKO,NASDAQ:DKNG,NYSE:MSGS,NASDAQ:LLYVA,NASDAQ:CHDN,NYSE:CNK"
+        "Multi-Line Insurance" => "NYSE:PGR,NYSE:MET,NYSE:ALL,NYSE:AFL,NYSE:AIG,NASDAQ:ACGL,NYSE:WRB,NASDAQ:CINF"
+        "Office Equipment/Supplies" => "NYSE:HNI,NASDAQ:MLKN"
+        "Oil & Gas Pipelines" => "NYSE:WMB,NYSE:EPD,NYSE:KMI,AMEX:ET,NYSE:LNG,NYSE:MPLX,NYSE:VG,NYSE:WES"
+        "Oil & Gas Production" => "NYSE:COP,NASDAQ:FANG,NYSE:AR,NYSE:RRC,NYSE:MGY,NYSE:MUR,NYSE:CNX,NASDAQ:PTEN"
+        "Oil Refining/Marketing" => "NYSE:MPC,NYSE:VLO,NYSE:PSX,NYSE:DINO,NYSE:PBF,NYSE:CVI,NASDAQ:CLMT,NYSE:DK"
+        "Oilfield Services/Equipment" => "NYSE:FTI,NYSE:HAL,NYSE:NOV,NYSE:SEI,NASDAQ:WFRD,NYSE:AROC,NYSE:KGS,NYSE:WHD"
+        "Other Consumer Services" => "NASDAQ:BKNG,NASDAQ:EXPE,NYSE:SCI,NYSE:LTH,NYSE:ANDG,NYSE:HRB,NYSE:GHC,NYSE:UNF"
+        "Other Metals/Minerals" => "NYSE:SCCO,NYSE:FCX,NYSE:ATI,NYSE:CRS,NYSE:MP,NASDAQ:AUGO,AMEX:UEC,NASDAQ:ALM"
+        "Other Transportation" => "NYSE:UBER,NYSE:PFGC,NYSE:SARO,NASDAQ:LYFT,NYSE:VNT,NYSE:CAAP"
+        "Packaged Software" => "NASDAQ:MSFT,NASDAQ:PLTR,NYSE:ORCL,NASDAQ:PANW,NASDAQ:CRWD,NYSE:CRM,NYSE:NOW,NYSE:SNOW"
+        "Personnel Services" => "NYSE:KFY,NYSE:RHI,NYSE:MAN,NYSE:AMN,NASDAQ:UPWK"
+        "Pharmaceuticals: Major" => "NYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK,NYSE:PFE,NASDAQ:VRTX,NYSE:BMY,NASDAQ:REGN"
+        "Precious Metals" => "NYSE:NEM,NYSE:AU,NASDAQ:RGLD,NYSE:CDE,AMEX:EQX,NYSE:HL,NASDAQ:SSRM,AMEX:NG"
+        "Property/Casualty Insurance" => "NYSE:BRK.B,NYSE:CB,NYSE:TRV,NYSE:HIG,NYSE:MKL,NYSE:L,NYSE:EG,NYSE:RNR"
+        "Publishing: Newspapers" => "NASDAQ:NWS,NYSE:NYT,NYSE:TDAY"
+        "Pulp & Paper" => "NYSE:IP,NYSE:AVY,NYSE:SLVM"
+        "Railroads" => "NYSE:UNP,NASDAQ:CSX,NYSE:NSC,NYSE:GATX"
+        "Real Estate Development" => "NYSE:CBRE,NYSE:JLL,NYSE:COMP,NYSE:HHH,NYSE:MTH,NYSE:JOE,NYSE:MRP,NYSE:EROK"
+        "Real Estate Investment Trusts" => "NYSE:WELL,NYSE:PLD,NASDAQ:EQIX,NYSE:AMT,NYSE:DLR,NYSE:SPG,NYSE:PSA,NYSE:O"
+        "Recreational Products" => "NYSE:AS,NASDAQ:HAS,NASDAQ:MAT,NYSE:GOLF,NYSE:THO,NYSE:PII,NYSE:CALY,NYSE:HAYW"
+        "Regional Banks" => "NYSE:NU,NYSE:TFC,NYSE:FITB,NYSE:MTB,NASDAQ:FCNCA,NASDAQ:EWBC,NYSE:PNFP,NYSE:FHN"
+        "Restaurants" => "NYSE:MCD,NASDAQ:SBUX,NYSE:YUM,NYSE:CMG,NYSE:QSR,NYSE:DRI,NYSE:YUMC,NYSE:ARMK"
+        "Savings Banks" => "NASDAQ:TFSL,NASDAQ:WSFS,NASDAQ:CLBK,NYSE:PFS,NASDAQ:NWBI,NASDAQ:OCFC,NYSE:TFIN,NASDAQ:CFFN"
+        "Semiconductors" => "NASDAQ:NVDA,NASDAQ:AVGO,NASDAQ:MU,NASDAQ:AMD,NASDAQ:INTC,NASDAQ:TXN,NASDAQ:KLAC,NASDAQ:MRVL"
+        "Services to the Health Industry" => "NYSE:DGX,NASDAQ:ASTH"
+        "Specialty Insurance" => "NYSE:FNF,NYSE:ORI,NYSE:FAF,NYSE:ESNT,NYSE:RDN,NYSE:AGO,NYSE:STC"
+        "Specialty Stores" => "NASDAQ:WMT,NASDAQ:COST,NASDAQ:ORLY,NYSE:TGT,NYSE:CVNA,NYSE:AZO,NYSE:WSM,NASDAQ:CPRT"
+        "Specialty Telecommunications" => "NASDAQ:SPCX,NASDAQ:ECHO,NASDAQ:ASTS,NASDAQ:IRDM,NASDAQ:ITRN"
+        "Steel" => "NYSE:NUE,NASDAQ:STLD,NYSE:RS,NYSE:CLF,NYSE:CMC,NYSE:WS,NYSE:RYZ"
+        "Telecommunications Equipment" => "NASDAQ:AAPL,NASDAQ:CSCO,NYSE:MSI,NYSE:CIEN,NYSE:GRMN,NYSE:UI,NASDAQ:VSAT,NASDAQ:ONDS"
+        "Tobacco" => "NYSE:PM,NYSE:MO,NYSE:TPB"
+        "Tools & Hardware" => "NYSE:SNA,NYSE:SWK,NYSE:ALLE"
+        "Trucking" => "NASDAQ:ODFL,NASDAQ:JBHT,NYSE:XPO,NYSE:FDXF,NYSE:KNX,NASDAQ:SAIA,NASDAQ:LSTR,NYSE:SNDR"
+        "Trucks/Construction/Farm Machinery" => "NYSE:CAT,NYSE:DE,NASDAQ:PCAR,NYSE:WAB,NYSE:CNH,NYSE:BWA,NYSE:TTC,NYSE:AGCO"
+        "Water Utilities" => "NYSE:AWK,NYSE:WTRG,NYSE:AWR,NYSE:CWT,NASDAQ:HTO,NASDAQ:MSEX"
+        "Wholesale Distributors" => "NYSE:GWW,NASDAQ:FAST,NYSE:FERG,NYSE:GPC,NYSE:WCC,AMEX:SUN,NYSE:AIT,NYSE:QXO"
+        "Wireless Telecommunications" => "NYSE:VZ,NASDAQ:TMUS,NYSE:T,NASDAQ:TIGO,NASDAQ:GSAT,NYSE:TDS,NYSE:AD,NASDAQ:ATEX"
+        => ""
+    string sec = switch syminfo.sector
+        "Commercial Services" => "NASDAQ:SHOP,NYSE:SPGI,NASDAQ:CTAS,NYSE:MCO,NYSE:VYLR,NASDAQ:PYPL,NYSE:XYZ,NYSE:MSCI"
+        "Communications" => "NASDAQ:SPCX,NYSE:VZ,NASDAQ:TMUS,NYSE:T,NASDAQ:ECHO,NASDAQ:ASTS,NASDAQ:TIGO,NASDAQ:GSAT"
+        "Consumer Durables" => "NASDAQ:TSLA,NYSE:GM,NYSE:F,NYSE:DHI,NYSE:SN,NYSE:PHM,NASDAQ:RIVN,NYSE:SNA"
+        "Consumer Non-Durables" => "NYSE:KO,NYSE:PG,NYSE:PM,NASDAQ:PEP,NYSE:MO,NASDAQ:MNST,NASDAQ:MDLZ,NYSE:CL"
+        "Consumer Services" => "NYSE:DIS,NYSE:MCD,NASDAQ:BKNG,NASDAQ:SBUX,NASDAQ:ABNB,NASDAQ:MAR,NYSE:RCL,NYSE:HLT"
+        "Distribution Services" => "NYSE:MCK,NYSE:COR,NYSE:GWW,NASDAQ:FAST,NYSE:CAH,NYSE:FERG,NYSE:SYY,NYSE:SNX"
+        "Electronic Technology" => "NASDAQ:NVDA,NASDAQ:AAPL,NASDAQ:AVGO,NASDAQ:MU,NASDAQ:AMD,NASDAQ:INTC,NASDAQ:CSCO,NYSE:DELL"
+        "Energy Minerals" => "NYSE:XOM,NYSE:CVX,NYSE:COP,NYSE:MPC,NYSE:VLO,NYSE:PSX,NYSE:EOG,NYSE:OXY"
+        "Finance" => "NYSE:BRK.B,NYSE:JPM,NYSE:V,NYSE:MA,NYSE:BAC,NYSE:MS,NYSE:GS,NYSE:WFC"
+        "Health Services" => "NYSE:UNH,NYSE:HCA,NYSE:ELV,NYSE:CI,NYSE:HUM,NYSE:CNC,NYSE:DGX,NYSE:LH"
+        "Health Technology" => "NYSE:LLY,NYSE:JNJ,NYSE:ABBV,NYSE:MRK,NYSE:TMO,NASDAQ:AMGN,NASDAQ:GILD,NYSE:ABT"
+        "Industrial Services" => "NYSE:PWR,NYSE:WMB,NYSE:WM,NYSE:EPD,NYSE:KMI,NYSE:SLB,AMEX:ET,NYSE:RSG"
+        "Miscellaneous" => "NYSE:TPL,NASDAQ:VNOM,NYSE:BXSL,NYSE:PSUS,NYSE:BSM,NYSE:FSK,NYSE:KRP,NYSE:PBT"
+        "Non-Energy Minerals" => "NYSE:SCCO,NYSE:NEM,NYSE:FCX,NYSE:NUE,NYSE:CRH,NYSE:AU,NASDAQ:STLD,NYSE:MLM"
+        "Process Industries" => "NASDAQ:LIN,NYSE:ECL,NYSE:SHW,NYSE:APD,NYSE:ADM,NYSE:PPG,NYSE:SW,NYSE:DOW"
+        "Producer Manufacturing" => "NASDAQ:AMAT,NASDAQ:LRCX,NYSE:CAT,NYSE:GEV,NYSE:DE,NYSE:ETN,NYSE:PH,NYSE:TT"
+        "Retail Trade" => "NASDAQ:AMZN,NASDAQ:WMT,NASDAQ:COST,NYSE:HD,NYSE:TJX,NYSE:CVS,NYSE:LOW,NASDAQ:MELI"
+        "Technology Services" => "NASDAQ:GOOG,NASDAQ:MSFT,NASDAQ:META,NASDAQ:PLTR,NYSE:ORCL,NASDAQ:PANW,NASDAQ:NFLX,NASDAQ:CRWD"
+        "Transportation" => "NYSE:UNP,NYSE:UBER,NASDAQ:CSX,NASDAQ:DASH,NYSE:UPS,NYSE:NSC,NYSE:FDX,NYSE:DAL"
+        "Utilities" => "NYSE:NEE,NASDAQ:CEG,NYSE:SO,NYSE:DUK,NASDAQ:AEP,NYSE:TRGP,NYSE:D,NYSE:SRE"
+        => ""
+    string raw = ind != "" ? ind : sec
+    string srcName = ind != "" ? "Ind" : sec != "" ? "Sec" : ""
+    [raw, srcName]
+
+tickerAt(string raw, int idx) =>
+    string out = ""
+    if raw != ""
+        array<string> parts = str.split(raw, ",")
+        if idx < array.size(parts)
+            out := array.get(parts, idx)
+    out
+
+// Empty slots reuse SPY. Identical requests are cached, and SPY has no EPS so it
+// cannot enter the median.
+peerClose(string tk) =>
+    request.security(tk == "" ? "AMEX:SPY" : tk, "D", close, ignore_invalid_symbol=true)
+
+peerEarn(string tk) =>
+    request.financial(tk == "" ? "AMEX:SPY" : tk, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)
+
+// Drop this symbol and peers whose TTM P/E is not in (0, 100].
+keptPE(string tk, float px, float e) =>
+    bool isSelf = tk != "" and (tk == syminfo.tickerid or str.endswith(tk, ":" + syminfo.ticker))
+    float pe = not isSelf and not na(px) and not na(e) and e > 0 ? px / e : na
+    pe > 0 and pe <= 100 ? pe : na
+
+[peerRaw, peerSrc] = peerBaskets()
+string tk0 = tickerAt(peerRaw, 0)
+string tk1 = tickerAt(peerRaw, 1)
+string tk2 = tickerAt(peerRaw, 2)
+string tk3 = tickerAt(peerRaw, 3)
+string tk4 = tickerAt(peerRaw, 4)
+string tk5 = tickerAt(peerRaw, 5)
+string tk6 = tickerAt(peerRaw, 6)
+string tk7 = tickerAt(peerRaw, 7)
+float k0 = keptPE(tk0, peerClose(tk0), peerEarn(tk0))
+float k1 = keptPE(tk1, peerClose(tk1), peerEarn(tk1))
+float k2 = keptPE(tk2, peerClose(tk2), peerEarn(tk2))
+float k3 = keptPE(tk3, peerClose(tk3), peerEarn(tk3))
+float k4 = keptPE(tk4, peerClose(tk4), peerEarn(tk4))
+float k5 = keptPE(tk5, peerClose(tk5), peerEarn(tk5))
+float k6 = keptPE(tk6, peerClose(tk6), peerEarn(tk6))
+float k7 = keptPE(tk7, peerClose(tk7), peerEarn(tk7))
+
+float peEps = request.financial(syminfo.tickerid, "EARNINGS_PER_SHARE", "TTM", ignore_invalid_symbol=true)
+float stockPE = peEps > 0 ? stockClose / peEps : na
+bool showPE = not isCrypto and not isCommodity and not isForex and not isIndex and not isFund and not na(peEps)
+
+var array<float> peBasket = array.new_float()
+if barstate.islast
+    array.clear(peBasket)
+    if not na(k0)
+        array.push(peBasket, k0)
+    if not na(k1)
+        array.push(peBasket, k1)
+    if not na(k2)
+        array.push(peBasket, k2)
+    if not na(k3)
+        array.push(peBasket, k3)
+    if not na(k4)
+        array.push(peBasket, k4)
+    if not na(k5)
+        array.push(peBasket, k5)
+    if not na(k6)
+        array.push(peBasket, k6)
+    if not na(k7)
+        array.push(peBasket, k7)
+
+float peerMed = na
+int peN = array.size(peBasket)
+// Pine's `/` returns a float. array.get needs an int index.
+int mid = int(peN / 2)
+if peN >= 2
+    array.sort(peBasket, order.ascending)
+    peerMed := peN % 2 == 1 ? array.get(peBasket, mid) : (array.get(peBasket, mid - 1) + array.get(peBasket, mid)) / 2.0
+
+peTxt(float x) =>
+    str.tostring(x, "#.#")
+
 // ==========================================
 // 3. VISUALIZATION
 // ==========================================
 
-set_row(row, title, value, isGood, isBad) =>
+set_row(row, title, value, isGood, isBad, string tip = "") =>
     if row < 20  // Safety check to prevent out of bounds
         c_val = isBad ? c_bear : isGood ? c_bull : c_text
         icon = isBad ? "▼" : isGood ? "▲" : "•"
-        table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left)
-        table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right)
-        table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small)
+        table.cell(checklistTable, 0, row, title, text_color=c_neut, text_size=size.small, text_halign=text.align_left, tooltip=tip)
+        table.cell(checklistTable, 1, row, value, text_color=c_val, text_size=size.small, text_halign=text.align_right, tooltip=tip)
+        table.cell(checklistTable, 2, row, icon, text_color=c_val, text_size=size.small, tooltip=tip)
 
 if barstate.islast
-    // Debug: Log asset type when not a stock
-    if not hasFinancialData
-        log.error("DEBUG: Asset type detected - " + syminfo.type)
-    
     // Initialize row counter
     currentRow = 0
     
@@ -529,6 +762,31 @@ if barstate.islast
         if not (na(salesAcceleration) or na(epsAcceleration))
             set_row(currentRow, "Accel (S/E)", accelerationStr, isBothAccelerating, false)
             currentRow := currentRow + 1
+
+    // Trailing P/E against the same industry, or the same sector when the industry basket is thin.
+    if showPE
+        string peLabel = "PE"
+        string peVal = "N/A"
+        bool peCheap = false
+        bool peRich = false
+        string peTip = ""
+        if peEps <= 0
+            peVal := na(peerMed) ? "loss" : "loss (vs " + peTxt(peerMed) + ")"
+            peTip := "本益比 is not meaningful without trailing earnings." + (na(peerMed) ? "" : " Category median is " + peTxt(peerMed) + ".")
+        else if na(peerMed)
+            peVal := peTxt(stockPE)
+            peTip := "本益比 (TTM P/E). Fewer than two profitable large-cap peers in this category."
+        else
+            float pePrem = (stockPE / peerMed - 1) * 100
+            string premStr = (pePrem > 0 ? "+" : "") + str.tostring(pePrem, "#") + "%"
+            peLabel := "PE/" + peerSrc
+            peVal := peTxt(stockPE) + " (" + premStr + ")"
+            peCheap := stockPE <= peerMed * 0.85
+            peRich := stockPE >= peerMed * 1.5
+            string catWord = peerSrc == "Ind" ? "industry" : "sector"
+            peTip := "本益比 " + peTxt(stockPE) + " vs " + catWord + " median " + peTxt(peerMed) + " (" + str.tostring(peN) + " largest US peers, TTM P/E between 0 and 100). Green: 15% or more below. Red: 50% or more above."
+        set_row(currentRow, peLabel, peVal, peCheap, peRich, peTip)
+        currentRow := currentRow + 1
         
         // Add section separator after fundamentals if any were shown
     //    if currentRow > 1
@@ -568,4 +826,3 @@ if barstate.islast
     // Show Industry RS Rating only if valid ETF found and different ETF
     if not na(industryETF) and sectorETF != industryETF
         set_row(currentRow, "RS v " + indTicker + "", str.tostring(rsIndustryRating), isIndustryRSStrong, isIndustryRSWeak)
-
